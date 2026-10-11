@@ -1,0 +1,62 @@
+{
+  "dishes": [
+    {
+      "createdAt": "10-10-2026 20:06",
+      "id": 1,
+      "name": "Fries",
+      "variants": [
+        {
+          "createdAt": "10-10-2026 20:06",
+          "id": 1,
+          "name": "Crispy Fries",
+          "recipe": {
+            "cookingTime": 5,
+            "ingredients": [
+              "potato",
+              "oil",
+              "spices",
+              "salt"
+            ],
+            "mainIngredient": "Potato And Oil",
+            "steps": [
+              "pour oil",
+              "make it upto 90C",
+              "fry potato",
+              "add spices"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "createdAt": "10-10-2026 20:12",
+      "id": 2,
+      "name": "Pulao",
+      "variants": [
+        {
+          "createdAt": "10-10-2026 20:12",
+          "id": 2,
+          "name": "Hydrabadi Pulao",
+          "recipe": {
+            "cookingTime": 40,
+            "ingredients": [
+              "rice",
+              "chicken",
+              "spices",
+              "garlic paste"
+            ],
+            "mainIngredient": "Rice, And Chicken",
+            "steps": [
+              "fry onion",
+              "add garlic paste",
+              "then make yakni",
+              "add rices"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "lastDishId": 2,
+  "lastVariantId": 2
+}
