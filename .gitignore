@@ -1,5 +1,6 @@
 Api key.txt
-output/*.exe
 output/session.txt
 output/users.json
 output/users.backup.json
+opencode.jsonc
+techstack.md
