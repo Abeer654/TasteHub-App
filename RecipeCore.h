@@ -2,47 +2,97 @@
 #define RECIPECORE_H
 
 // ============================================================
-//  RecipeCore.h  -  the ONE shared file used by BOTH
-//  uploading_part.cpp and search_part.cpp  (this is what links them).
-//  Contains: helper functions, BaseEntity, Recipe, Variant, Dish,
-//            RecipeDatabase (reads/writes recipes.json)
+//  RecipeCore.h  -  the ONE shared file used by ALL programs
+//  (upload.cpp, search.cpp, rating.cpp).  This is what links them.
+//
+//  What is inside (read it from top to bottom):
+//    PART A  small helper functions (text, dates, files)
+//    PART B  password security  (a "black box": you only call it)
+//    PART C  BaseEntity   <- the parent class (id + date)
+//    PART D  Vote, Reactions, Rating, Ratings, Comment
+//    PART E  Recipe, Variant, Dish   (Variant and Dish inherit BaseEntity)
+//    PART F  User                    (inherits BaseEntity)
+//    PART G  RecipeDatabase  (reads / writes recipes.json)
+//    PART H  UserDatabase    (reads / writes users.json)
+//    PART I  showing a recipe page
+//    PART J  searching
 // ============================================================
 
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <string>
-#include <algorithm>
 #include <ctime>
+#include <random>
 #include "json.hpp"
 using namespace std;
 using json = nlohmann::json;
 
 // ------------------------------------------------------------
+//  Settings (constants)
+// ------------------------------------------------------------
+const int DELETED_OWNER = -1;                 // ownerId of a recipe whose owner deleted the account
+const double GOOD_RECIPE_MIN_AVERAGE = 4.0;   // a recipe has a GOOD RECORD if its average rating is at least this ...
+const int GOOD_RECIPE_MIN_RATINGS = 2;        // ... from at least this many people
+const int MAX_COMMENT_LENGTH = 500;
+
+// ------------------------------------------------------------
 //  PART A: small helper functions
 // ------------------------------------------------------------
 
+// Note: a "char" can be NEGATIVE for Urdu letters (they use 2-3 bytes each).
+// That is why some helpers below convert the char to "unsigned char" first.
+
+bool isSpaceChar(char c){
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+}
+
+bool isLetterOrDigit(char c){
+    unsigned char u = (unsigned char)c;
+    return isalnum(u);
+}
+
+// true for the bytes of non-English letters (like Urdu)
+bool isNonEnglishByte(char c){
+    unsigned char u = (unsigned char)c;
+    return u >= 128;
+}
+
+// Urdu letters use 2-3 bytes. Every byte except the first one is a "continuation byte".
+bool isContinuationByte(char c){
+    unsigned char u = (unsigned char)c;
+    return u >= 128 && u < 192;
+}
+
+char lowerChar(char c){
+    unsigned char u = (unsigned char)c;
+    return (char)tolower(u);
+}
+
 // "Rice", "RICE", "rice" all become "rice"
-inline string toLowerCase(string s){
-    transform(s.begin(), s.end(), s.begin(),
-              [](unsigned char c){ return tolower(c); });
+string toLowerCase(string s){
+    for(int i = 0; i < (int)s.size(); i++){
+        s[i] = lowerChar(s[i]);
+    }
     return s;
 }
 
 // removes extra spaces from start and end: "  Biryani " -> "Biryani"
-inline string trimSpaces(string s){
-    size_t start = s.find_first_not_of(" \t\r\n");
-    if(start == string::npos) return "";
-    size_t end = s.find_last_not_of(" \t\r\n");
+string trimSpaces(string s){
+    int start = 0;
+    int end = (int)s.size() - 1;
+    while(start <= end && isSpaceChar(s[start])) start++;
+    while(end >= start && isSpaceChar(s[end])) end--;
     return s.substr(start, end - start + 1);
 }
 
 // also fixes spaces inside: "Chicken    Biryani " -> "Chicken Biryani"
-inline string tidyName(string s){
+string tidyName(string s){
     s = trimSpaces(s);
-    string result;
+    string result = "";
     bool lastWasSpace = false;
-    for(char c : s){
+    for(int i = 0; i < (int)s.size(); i++){
+        char c = s[i];
         if(c == ' ' || c == '\t'){
             if(!lastWasSpace) result += ' ';
             lastWasSpace = true;
@@ -55,60 +105,263 @@ inline string tidyName(string s){
     return result;
 }
 
+// 5 -> "05"
+string twoDigits(int number){
+    if(number < 10) return "0" + to_string(number);
+    return to_string(number);
+}
+
+// Current date and time in a format Flutter/Dart can read: 2026-10-10T18:30:05
+string currentTimeText(){
+    time_t now = time(0);
+    tm *t = localtime(&now);          // t points to the broken-down time (year, month, ...)
+    return to_string(t->tm_year + 1900) + "-" + twoDigits(t->tm_mon + 1) + "-" + twoDigits(t->tm_mday)
+         + "T" + twoDigits(t->tm_hour) + ":" + twoDigits(t->tm_min) + ":" + twoDigits(t->tm_sec);
+}
+
+// 2026-10-10T18:30:05 -> 2026-10-10 18:30:05
+string readableDate(string iso){
+    if(iso.size() > 10 && iso[10] == 'T') iso[10] = ' ';
+    return iso;
+}
+
+// 4.5 -> "4.5"   4.0 -> "4.0"   (one digit after the point)
+string oneDecimal(double value){
+    int tenths = (int)(value * 10 + 0.5);
+    return to_string(tenths / 10) + "." + to_string(tenths % 10);
+}
+
+// shortens long text to about maxBytes bytes, never cutting a letter in half
+string cutText(string s, int maxBytes){
+    if((int)s.size() <= maxBytes) return s;
+    int cut = maxBytes;
+    while(cut > 0 && isContinuationByte(s[cut])) cut--;
+    return s.substr(0, cut) + "...";
+}
+
+// reads a whole file into one text ("" if the file does not exist)
+string readWholeFile(string fileName){
+    ifstream inFile(fileName);
+    string text = "";
+    string line;
+    while(getline(inFile, line)){
+        text += line + "\n";
+    }
+    return text;
+}
+
+// copies the current file to a backup file (done before every save)
+void makeBackupOf(string fileName, string backupName){
+    string oldText = readWholeFile(fileName);
+    if(oldText.size() == 0) return;
+    ofstream out(backupName);
+    out << oldText;
+}
+
+// turns JSON into text. (The extra words keep it safe even if somebody typed a broken character.)
+string jsonToText(json &j){
+    return j.dump(4, ' ', false, json::error_handler_t::replace);
+}
+
 // Splits text into lowercase WORDS. Letters/digits (and Urdu letters) stay together,
 // spaces, commas, dots etc. separate words:  "Rice, 2 cups" -> ["rice", "2", "cups"]
-inline vector<string> splitWords(string text){
+vector<string> splitWords(string text){
     vector<string> words;
-    string word;
+    string word = "";
 
-    for(char ch : text){
-        unsigned char c = (unsigned char)ch;
-        bool isWordChar = (c >= 128) || isalnum(c);   // c >= 128 means non-English letters (Urdu etc.)
-
-        if(isWordChar){
-            word += (char)tolower(c);
+    for(int i = 0; i < (int)text.size(); i++){
+        char c = text[i];
+        if(isLetterOrDigit(c) || isNonEnglishByte(c)){
+            word += lowerChar(c);
         }
-        else if(!word.empty()){
+        else if(word.size() > 0){
             words.push_back(word);
-            word.clear();
+            word = "";
         }
     }
-    if(!word.empty()) words.push_back(word);
+    if(word.size() > 0) words.push_back(word);
 
     return words;
 }
 
 // same word, also treating simple plurals as same: egg/eggs, potato/potatoes
-inline bool sameWord(string a, string b){
+bool sameWord(string a, string b){
     return a == b
         || a + "s" == b || a + "es" == b
         || b + "s" == a || b + "es" == a;
 }
 
 // true if text has this WHOLE word (so "oil" does NOT match "boil")
-inline bool textHasWord(string text, string word){
+bool textHasWord(string text, string word){
     word = toLowerCase(word);
-    for(auto &w : splitWords(text)){
-        if(sameWord(w, word)) return true;
+    vector<string> words = splitWords(text);
+    for(int i = 0; i < (int)words.size(); i++){
+        if(sameWord(words[i], word)) return true;
     }
     return false;
 }
 
 // true if a word in text STARTS with the typed word ("biry" finds "biryani",
 // but "oil" still does NOT match "boil")
-inline bool textHasWordStart(string text, string word){
+bool textHasWordStart(string text, string word){
     word = toLowerCase(word);
-    if(word.empty()) return false;
+    if(word.size() == 0) return false;
 
-    for(auto &w : splitWords(text)){
-        if(w.compare(0, word.size(), word) == 0) return true;
-        if(sameWord(w, word)) return true;
+    vector<string> words = splitWords(text);
+    for(int i = 0; i < (int)words.size(); i++){
+        if(words[i].substr(0, word.size()) == word) return true;
+        if(sameWord(words[i], word)) return true;
     }
     return false;
 }
 
 // ------------------------------------------------------------
-//  PART B: BaseEntity (id + date shared by Dish and Variant)
+//  PART B: PASSWORD SECURITY   (a "black box" - you do NOT need to
+//  understand what is inside, just what it does)
+//
+//   - A password is NEVER saved as readable text. We save a scrambled
+//     version of it, called a "hash". Nobody can turn a hash back into
+//     the password.
+//   - "salt" = a random text mixed into the password before scrambling,
+//     so two people with the same password still get different hashes.
+//   - sha256Hex() is a standard, ready-made scrambling recipe (SHA-256).
+//     The bit tricks inside (<< >> & ^) belong to that recipe.
+//
+//  The only functions the rest of the program uses:
+//     hashPassword(salt, password)   randomHex(bytes)
+//     generateRecoveryCode()         normalizeRecoveryCode(code)
+//  (A real startup would use a ready-made login service instead.)
+// ------------------------------------------------------------
+
+unsigned int rotateRight(unsigned int x, int n){
+    return (x >> n) | (x << (32 - n));
+}
+
+// SHA-256: turns any text into a 64-character scrambled code
+string sha256Hex(string input){
+    const unsigned int k[64] = {
+        0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+        0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+        0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+        0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+        0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+        0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+        0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+        0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+    };
+
+    unsigned int h[8] = {0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
+                         0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
+
+    // padding: add 0x80, then zeros, then the original length in bits
+    string msg = input;
+    unsigned long long bitLength = (unsigned long long)input.size() * 8;
+    msg += (char)0x80;
+    while(msg.size() % 64 != 56) msg += (char)0;
+    for(int i = 7; i >= 0; i--){
+        msg += (char)((bitLength >> (i * 8)) & 0xff);
+    }
+
+    for(int chunk = 0; chunk < (int)msg.size(); chunk += 64){
+        unsigned int w[64];
+        for(int i = 0; i < 16; i++){
+            int p = chunk + i * 4;
+            w[i] = ((unsigned int)(unsigned char)msg[p] << 24)
+                 | ((unsigned int)(unsigned char)msg[p + 1] << 16)
+                 | ((unsigned int)(unsigned char)msg[p + 2] << 8)
+                 |  (unsigned int)(unsigned char)msg[p + 3];
+        }
+        for(int i = 16; i < 64; i++){
+            unsigned int s0 = rotateRight(w[i-15], 7) ^ rotateRight(w[i-15], 18) ^ (w[i-15] >> 3);
+            unsigned int s1 = rotateRight(w[i-2], 17) ^ rotateRight(w[i-2], 19) ^ (w[i-2] >> 10);
+            w[i] = w[i-16] + s0 + w[i-7] + s1;
+        }
+
+        unsigned int a = h[0], b = h[1], c = h[2], d = h[3];
+        unsigned int e = h[4], f = h[5], g = h[6], hh = h[7];
+
+        for(int i = 0; i < 64; i++){
+            unsigned int S1 = rotateRight(e, 6) ^ rotateRight(e, 11) ^ rotateRight(e, 25);
+            unsigned int ch = (e & f) ^ (~e & g);
+            unsigned int t1 = hh + S1 + ch + k[i] + w[i];
+            unsigned int S0 = rotateRight(a, 2) ^ rotateRight(a, 13) ^ rotateRight(a, 22);
+            unsigned int maj = (a & b) ^ (a & c) ^ (b & c);
+            unsigned int t2 = S0 + maj;
+
+            hh = g; g = f; f = e; e = d + t1;
+            d = c; c = b; b = a; a = t1 + t2;
+        }
+
+        h[0] += a; h[1] += b; h[2] += c; h[3] += d;
+        h[4] += e; h[5] += f; h[6] += g; h[7] += hh;
+    }
+
+    string hexDigits = "0123456789abcdef";
+    string result = "";
+    for(int i = 0; i < 8; i++){
+        for(int shift = 28; shift >= 0; shift -= 4){
+            result += hexDigits[(h[i] >> shift) & 0xf];
+        }
+    }
+    return result;
+}
+
+// password + salt -> hash, scrambled 10000 times (makes guessing passwords slow)
+string hashPassword(string salt, string password){
+    string h = sha256Hex(salt + password);
+    for(int i = 0; i < 10000; i++){
+        h = sha256Hex(h + salt + password);
+    }
+    return h;
+}
+
+random_device randomSource;       // the computer's own source of random numbers
+
+// a random whole number from 0 to range-1
+// (we only use 256 and 32, so every number is equally likely)
+int randomNumber(int range){
+    unsigned int value = randomSource() + (unsigned int)time(0);
+    return (int)(value % (unsigned int)range);
+}
+
+// random text made of hex characters, e.g. a salt
+string randomHex(int bytes){
+    string hexDigits = "0123456789abcdef";
+    string result = "";
+    for(int i = 0; i < bytes; i++){
+        int value = randomNumber(256);
+        result += hexDigits[value / 16];
+        result += hexDigits[value % 16];
+    }
+    return result;
+}
+
+// recovery code like K7QM-4XNP-9TWD (no confusing letters like O/0 or I/1)
+string generateRecoveryCode(){
+    string alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    string code = "";
+    for(int i = 0; i < 12; i++){
+        if(i > 0 && i % 4 == 0) code += '-';
+        code += alphabet[randomNumber(32)];
+    }
+    return code;
+}
+
+// "k7qm 4xnp-9twd" -> "K7QM4XNP9TWD" (so small/capital letters, spaces and dashes don't matter)
+string normalizeRecoveryCode(string code){
+    string result = "";
+    for(int i = 0; i < (int)code.size(); i++){
+        if(isLetterOrDigit(code[i])){
+            unsigned char u = (unsigned char)code[i];
+            result += (char)toupper(u);
+        }
+    }
+    return result;
+}
+
+// ------------------------------------------------------------
+//  PART C: BaseEntity - the PARENT class. Dish, Variant, Comment and User
+//  all INHERIT from it, so each of them automatically has an id and a date.
 // ------------------------------------------------------------
 class BaseEntity {
 protected:
@@ -124,14 +377,9 @@ public:
         return id;
     }
 
-    // Date/time is generated automatically, in a format Flutter/Dart can read:
-    // 2026-10-10T18:30:05
+    // Date/time is generated automatically by the system
     void autoSetDate(){
-        time_t now = time(0);
-        tm *localTime = localtime(&now);
-        char buffer[32];
-        strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%S", localTime);
-        createdAt = buffer;
+        createdAt = currentTimeText();
     }
 
     void setCreatedAt(string date){
@@ -144,7 +392,231 @@ public:
 };
 
 // ------------------------------------------------------------
-//  PART C: Recipe, Variant, Dish
+//  PART D: likes / dislikes, ratings and comments
+// ------------------------------------------------------------
+
+// one like (+1) or dislike (-1) of one user
+class Vote {
+public:
+    int userId;
+    int value;
+};
+
+// Reactions: all likes and dislikes of ONE thing (a recipe or a comment).
+// One user has only ONE vote on one thing.
+class Reactions {
+protected:
+    vector<Vote> votes;
+
+public:
+    // +1 (liked), -1 (disliked) or 0 (no vote yet)
+    int getVote(int userId){
+        for(Vote &v : votes){
+            if(v.userId == userId) return v.value;
+        }
+        return 0;
+    }
+
+    // returns false if the user ALREADY has exactly this vote (nothing changes).
+    // Liking after disliking (or the other way round) CHANGES the vote.
+    bool setVote(int userId, int value){
+        for(Vote &v : votes){
+            if(v.userId == userId){
+                if(v.value == value) return false;
+                v.value = value;
+                return true;
+            }
+        }
+        Vote newVote;
+        newVote.userId = userId;
+        newVote.value = value;
+        votes.push_back(newVote);
+        return true;
+    }
+
+    int likes(){
+        int count = 0;
+        for(Vote &v : votes){
+            if(v.value > 0) count++;
+        }
+        return count;
+    }
+
+    int dislikes(){
+        int count = 0;
+        for(Vote &v : votes){
+            if(v.value < 0) count++;
+        }
+        return count;
+    }
+
+    void removeUser(int userId){
+        for(int i = (int)votes.size() - 1; i >= 0; i--){
+            if(votes[i].userId == userId) votes.erase(votes.begin() + i);
+        }
+    }
+
+    json toJson(){
+        json list = json::array();
+        for(Vote &v : votes){
+            json j;
+            j["userId"] = v.userId;
+            j["value"] = v.value;
+            list.push_back(j);
+        }
+        return list;
+    }
+
+    void fromJson(json &list){
+        votes.clear();
+        for(json &j : list){
+            Vote v;
+            v.userId = j.value("userId", 0);
+            v.value = j.value("value", 0);
+            votes.push_back(v);
+        }
+    }
+};
+
+// one star rating (1 to 5) of one user
+class Rating {
+public:
+    int userId;
+    int stars;
+};
+
+// Ratings: all star ratings of ONE recipe (one rating per user)
+class Ratings {
+protected:
+    vector<Rating> list;
+
+public:
+    // 1-5, or 0 if this user has not rated yet
+    int getRating(int userId){
+        for(Rating &r : list){
+            if(r.userId == userId) return r.stars;
+        }
+        return 0;
+    }
+
+    // returns false if the user already gave exactly this rating
+    bool setRating(int userId, int stars){
+        for(Rating &r : list){
+            if(r.userId == userId){
+                if(r.stars == stars) return false;
+                r.stars = stars;
+                return true;
+            }
+        }
+        Rating newRating;
+        newRating.userId = userId;
+        newRating.stars = stars;
+        list.push_back(newRating);
+        return true;
+    }
+
+    int count(){
+        return (int)list.size();
+    }
+
+    double average(){
+        if(list.size() == 0) return 0;
+        int total = 0;
+        for(Rating &r : list){
+            total += r.stars;
+        }
+        return (double)total / (double)list.size();
+    }
+
+    void removeUser(int userId){
+        for(int i = (int)list.size() - 1; i >= 0; i--){
+            if(list[i].userId == userId) list.erase(list.begin() + i);
+        }
+    }
+
+    json toJson(){
+        json array = json::array();
+        for(Rating &r : list){
+            json j;
+            j["userId"] = r.userId;
+            j["stars"] = r.stars;
+            array.push_back(j);
+        }
+        return array;
+    }
+
+    void fromJson(json &array){
+        list.clear();
+        for(json &j : array){
+            Rating r;
+            r.userId = j.value("userId", 0);
+            r.stars = j.value("stars", 0);
+            list.push_back(r);
+        }
+    }
+};
+
+// Comment: written by a user on a recipe (inherits id + date from BaseEntity).
+// The owner of the recipe can HIDE it (it is not deleted).
+class Comment : public BaseEntity {
+protected:
+    int userId = 0;
+    string text;
+    bool hidden = false;
+    Reactions reactions;
+
+public:
+    void setUserId(int u){
+        userId = u;
+    }
+
+    int getUserId(){
+        return userId;
+    }
+
+    void setText(string t){
+        text = t;
+    }
+
+    string getText(){
+        return text;
+    }
+
+    void setHidden(bool h){
+        hidden = h;
+    }
+
+    bool isHidden(){
+        return hidden;
+    }
+
+    Reactions& getReactions(){
+        return reactions;
+    }
+
+    json toJson(){
+        json j;
+        j["id"] = id;
+        j["userId"] = userId;
+        j["text"] = text;
+        j["createdAt"] = createdAt;
+        j["hidden"] = hidden;
+        j["votes"] = reactions.toJson();
+        return j;
+    }
+
+    void fromJson(json &j){
+        id = j.value("id", 0);
+        userId = j.value("userId", 0);
+        text = j.value("text", string(""));
+        createdAt = j.value("createdAt", string(""));
+        hidden = j.value("hidden", false);
+        if(j.contains("votes")) reactions.fromJson(j["votes"]);
+    }
+};
+
+// ------------------------------------------------------------
+//  PART E: Recipe, Variant, Dish
 // ------------------------------------------------------------
 
 // Recipe: main ingredient + ingredients + steps + time
@@ -160,12 +632,12 @@ public:
         mainIngredient = m;
     }
 
-    void addIngredient(string ing){
-        ingredients.push_back(ing);
+    void setIngredients(vector<string> list){
+        ingredients = list;
     }
 
-    void addStep(string s){
-        steps.push_back(s);
+    void setSteps(vector<string> list){
+        steps = list;
     }
 
     void setCookingTime(int t){
@@ -176,15 +648,19 @@ public:
         return mainIngredient;
     }
 
+    int getCookingTime(){
+        return cookingTime;
+    }
+
     // true if a word starting with the typed word is in main ingredient, ingredients or steps
     bool hasWord(string word){
         if(textHasWordStart(mainIngredient, word)) return true;
 
-        for(auto &ing : ingredients){
-            if(textHasWordStart(ing, word)) return true;
+        for(int i = 0; i < (int)ingredients.size(); i++){
+            if(textHasWordStart(ingredients[i], word)) return true;
         }
-        for(auto &s : steps){
-            if(textHasWordStart(s, word)) return true;
+        for(int i = 0; i < (int)steps.size(); i++){
+            if(textHasWordStart(steps[i], word)) return true;
         }
         return false;
     }
@@ -192,14 +668,12 @@ public:
     void showDetails(){
         cout << "MAIN INGREDIENT: " << mainIngredient << "\n";
         cout << "INGREDIENTS:\n";
-        for(auto &ing : ingredients){
-            cout << " - " << ing << "\n";
+        for(int i = 0; i < (int)ingredients.size(); i++){
+            cout << " - " << ingredients[i] << "\n";
         }
         cout << "STEPS:\n";
-        int stepNum = 1;
-        for(auto &s : steps){
-            cout << " " << stepNum << ". " << s << "\n";
-            stepNum++;
+        for(int i = 0; i < (int)steps.size(); i++){
+            cout << " " << i + 1 << ". " << steps[i] << "\n";
         }
         cout << "Cooking Time: " << cookingTime << " minutes\n";
     }
@@ -214,18 +688,24 @@ public:
     }
 
     void fromJson(json &j){
-        mainIngredient = j.at("mainIngredient").get<string>();
-        ingredients = j.at("ingredients").get<vector<string>>();
-        steps = j.at("steps").get<vector<string>>();
-        cookingTime = j.at("cookingTime").get<int>();
+        mainIngredient = j.value("mainIngredient", string(""));
+        ingredients = j.value("ingredients", vector<string>());
+        steps = j.value("steps", vector<string>());
+        cookingTime = j.value("cookingTime", 0);
     }
 };
 
 // Variant: e.g. "Bombay Biryani" (inherits id + date from BaseEntity)
+// ownerId = id of the user who uploaded it (0 = unknown / old recipe, -1 = account deleted)
 class Variant : public BaseEntity {
 protected:
     string name;
     Recipe recipe;
+    int ownerId = 0;
+    string updatedAt;            // empty until the recipe is edited
+    Ratings ratings;
+    Reactions reactions;         // likes / dislikes of the recipe
+    vector<Comment> comments;
 
 public:
     void setName(string n){
@@ -240,15 +720,67 @@ public:
         return recipe;
     }
 
-    void show(string dishName){
-        string shownDate = createdAt;
-        if(shownDate.size() > 10 && shownDate[10] == 'T') shownDate[10] = ' ';   // "2026-10-10 18:30:05"
+    void setOwnerId(int owner){
+        ownerId = owner;
+    }
 
+    int getOwnerId(){
+        return ownerId;
+    }
+
+    Ratings& getRatings(){
+        return ratings;
+    }
+
+    Reactions& getReactions(){
+        return reactions;
+    }
+
+    vector<Comment>& getComments(){
+        return comments;
+    }
+
+    // remembers the time of the last edit (automatic)
+    void markEdited(){
+        updatedAt = currentTimeText();
+    }
+
+    int visibleCommentCount(){
+        int count = 0;
+        for(Comment &c : comments){
+            if(!c.isHidden()) count++;
+        }
+        return count;
+    }
+
+    // "Rating: 4.5/5 (2 ratings)   Likes: 5   Dislikes: 1   Comments: 3"
+    string summaryLine(){
+        string text;
+        if(ratings.count() == 0){
+            text = "Rating: not rated yet";
+        }
+        else{
+            string ratingWord = " ratings)";
+            if(ratings.count() == 1) ratingWord = " rating)";
+            text = "Rating: " + oneDecimal(ratings.average()) + "/5 (" + to_string(ratings.count()) + ratingWord;
+        }
+        text += "   Likes: " + to_string(reactions.likes());
+        text += "   Dislikes: " + to_string(reactions.dislikes());
+        text += "   Comments: " + to_string(visibleCommentCount());
+        return text;
+    }
+
+    void show(string dishName, string uploaderName){
         cout << "\n----------------------------\n";
         cout << "DISH: " << dishName << "\n";
         cout << "VARIANT: " << name << "\n";
+        cout << "Uploaded by: " << uploaderName << "\n";
         recipe.showDetails();
-        cout << "Posted on: " << shownDate << "\n";
+        cout << "Posted on: " << readableDate(createdAt) << "\n";
+        if(updatedAt.size() > 0){
+            cout << "Edited on: " << readableDate(updatedAt) << "\n";
+        }
+        cout << summaryLine() << "\n";
         cout << "----------------------------\n";
     }
 
@@ -256,18 +788,56 @@ public:
         json j;
         j["id"] = id;
         j["name"] = name;
+        j["ownerId"] = ownerId;
         j["createdAt"] = createdAt;
+        j["updatedAt"] = updatedAt;
         j["recipe"] = recipe.toJson();
+        j["ratings"] = ratings.toJson();
+        j["votes"] = reactions.toJson();
+        j["comments"] = json::array();
+        for(Comment &c : comments){
+            j["comments"].push_back(c.toJson());
+        }
         return j;
     }
 
     void fromJson(json &j){
-        id = j.at("id").get<int>();
-        name = j.at("name").get<string>();
-        createdAt = j.at("createdAt").get<string>();
-        recipe.fromJson(j.at("recipe"));
+        id = j.value("id", 0);
+        name = j.value("name", string(""));
+        createdAt = j.value("createdAt", string(""));
+        ownerId = j.value("ownerId", 0);               // old recipes have no owner -> 0
+        updatedAt = j.value("updatedAt", string(""));
+        if(j.contains("recipe")) recipe.fromJson(j["recipe"]);
+
+        // old recipes have no ratings / votes / comments yet
+        if(j.contains("ratings")) ratings.fromJson(j["ratings"]);
+        if(j.contains("votes")) reactions.fromJson(j["votes"]);
+        comments.clear();
+        if(j.contains("comments")){
+            for(json &cj : j["comments"]){
+                Comment c;
+                c.fromJson(cj);
+                comments.push_back(c);
+            }
+        }
     }
 };
+
+// position of a comment (by its id) inside a recipe, or -1
+int findCommentIndexById(Variant &variant, int commentId){
+    for(int i = 0; i < (int)variant.getComments().size(); i++){
+        if(variant.getComments()[i].getId() == commentId) return i;
+    }
+    return -1;
+}
+
+// A recipe has a GOOD RECORD if people rated it well. When its owner deletes the
+// account, such a recipe stays on the app (as "Deleted user"). The AI check
+// planned for part 4 can later improve or replace this one rule.
+bool isGoodRecipe(Variant &variant){
+    return variant.getRatings().count() >= GOOD_RECIPE_MIN_RATINGS
+        && variant.getRatings().average() >= GOOD_RECIPE_MIN_AVERAGE;
+}
 
 // Dish: e.g. "Biryani" (inherits id + date, owns many variants)
 class Dish : public BaseEntity {
@@ -293,7 +863,7 @@ public:
     }
 
     bool hasVariant(string variantName){
-        for(auto &v : variants){
+        for(Variant &v : variants){
             if(toLowerCase(v.getName()) == toLowerCase(variantName)) return true;
         }
         return false;
@@ -305,18 +875,18 @@ public:
         j["name"] = name;
         j["createdAt"] = createdAt;
         j["variants"] = json::array();
-        for(auto &v : variants){
+        for(Variant &v : variants){
             j["variants"].push_back(v.toJson());
         }
         return j;
     }
 
     void fromJson(json &j){
-        id = j.at("id").get<int>();
-        name = j.at("name").get<string>();
-        createdAt = j.at("createdAt").get<string>();
+        id = j.value("id", 0);
+        name = j.value("name", string(""));
+        createdAt = j.value("createdAt", string(""));
         variants.clear();
-        for(auto &vj : j.at("variants")){
+        for(json &vj : j["variants"]){
             Variant v;
             v.fromJson(vj);
             variants.push_back(v);
@@ -325,25 +895,126 @@ public:
 };
 
 // ------------------------------------------------------------
-//  PART D: RecipeDatabase - loads/saves everything in recipes.json
+//  PART F: User (an account). Password and recovery code are saved
+//  only as salt + hash, never as readable text.
+// ------------------------------------------------------------
+class User : public BaseEntity {
+protected:
+    string username;
+    string salt;
+    string passwordHash;
+    string recoverySalt;
+    string recoveryHash;
+    string sessionHash;          // scrambled copy of the "stay logged in" token (empty = not logged in anywhere)
+
+public:
+    void setUsername(string u){
+        username = u;
+    }
+
+    string getUsername(){
+        return username;
+    }
+
+    void setPassword(string plainPassword){
+        salt = randomHex(16);
+        passwordHash = hashPassword(salt, plainPassword);
+    }
+
+    bool checkPassword(string plainPassword){
+        if(passwordHash.size() == 0) return false;
+        return hashPassword(salt, plainPassword) == passwordHash;
+    }
+
+    // Makes a NEW recovery code (the old one stops working).
+    // Returns the readable code to show the user ONCE - only its hash is saved.
+    string makeNewRecoveryCode(){
+        string code = generateRecoveryCode();
+        recoverySalt = randomHex(16);
+        recoveryHash = hashPassword(recoverySalt, normalizeRecoveryCode(code));
+        return code;
+    }
+
+    bool checkRecoveryCode(string code){
+        if(recoveryHash.size() == 0) return false;
+        return hashPassword(recoverySalt, normalizeRecoveryCode(code)) == recoveryHash;
+    }
+
+    // "Stay logged in": only a scrambled copy of the secret token is saved here
+    void startSession(string token){
+        sessionHash = sha256Hex(token);
+    }
+
+    bool checkSession(string token){
+        if(sessionHash.size() == 0) return false;
+        return sha256Hex(token) == sessionHash;
+    }
+
+    void endSession(){
+        sessionHash = "";
+    }
+
+    json toJson(){
+        json j;
+        j["id"] = id;
+        j["username"] = username;
+        j["createdAt"] = createdAt;
+        j["salt"] = salt;
+        j["passwordHash"] = passwordHash;
+        j["recoverySalt"] = recoverySalt;
+        j["recoveryHash"] = recoveryHash;
+        j["sessionHash"] = sessionHash;
+        return j;
+    }
+
+    void fromJson(json &j){
+        id = j.value("id", 0);
+        username = j.value("username", string(""));
+        createdAt = j.value("createdAt", string(""));
+        salt = j.value("salt", string(""));
+        passwordHash = j.value("passwordHash", string(""));
+        recoverySalt = j.value("recoverySalt", string(""));
+        recoveryHash = j.value("recoveryHash", string(""));
+        sessionHash = j.value("sessionHash", string(""));
+    }
+};
+
+// ------------------------------------------------------------
+//  PART G: RecipeDatabase - loads/saves everything in recipes.json
 //  The "last used id" numbers are stored INSIDE the file, so ids keep
 //  increasing (1, 2, 3...) even after the program is closed and reopened.
+//  (ids of deleted recipes / comments are never used again)
 // ------------------------------------------------------------
+
+// points to one recipe: which dish, and which variant inside that dish
+class RecipeRef {
+public:
+    int dishIndex;
+    int variantIndex;
+};
+
+RecipeRef makeRef(int dishIndex, int variantIndex){
+    RecipeRef ref;
+    ref.dishIndex = dishIndex;
+    ref.variantIndex = variantIndex;
+    return ref;
+}
+
+// what will happen to the recipes of an account that is being deleted
+class DeletionPlan {
+public:
+    vector<RecipeRef> keep;       // good record -> stays as "Deleted user"
+    vector<RecipeRef> remove;     // deleted
+};
+
 class RecipeDatabase {
 protected:
     int lastDishId = 0;
     int lastVariantId = 0;
+    int lastCommentId = 0;
     vector<Dish> dishes;
     string fileName = "recipes.json";
     string backupName = "recipes.backup.json";
-
-    // copies the current file to recipes.backup.json before every save
-    void makeBackup(){
-        ifstream in(fileName, ios::binary);
-        if(!in) return;
-        ofstream out(backupName, ios::binary);
-        out << in.rdbuf();
-    }
 
 public:
     // Returns false only if the file exists but is damaged/unreadable
@@ -351,34 +1022,37 @@ public:
         dishes.clear();
         lastDishId = 0;
         lastVariantId = 0;
+        lastCommentId = 0;
 
-        ifstream inFile(fileName);
-        if(!inFile) return true;                                        // no file yet = empty database
-        if(inFile.peek() == ifstream::traits_type::eof()) return true;  // empty file = empty database
+        string text = readWholeFile(fileName);
+        if(text.size() == 0) return true;               // no file yet (or empty file) = empty database
 
-        try{
-            json j;
-            inFile >> j;
-            lastDishId = j.value("lastDishId", 0);
-            lastVariantId = j.value("lastVariantId", 0);
-
-            for(auto &dj : j.at("dishes")){
-                Dish d;
-                d.fromJson(dj);
-                dishes.push_back(d);
-            }
-        }
-        catch(exception &e){
-            cout << "ERROR: could not read " << fileName << " (" << e.what() << ")\n";
+        // "false" = do not crash on a damaged file, give a "discarded" marker instead
+        json j = json::parse(text, nullptr, false);
+        if(j.is_discarded() || !j.contains("dishes") || !j["dishes"].is_array()){
+            cout << "ERROR: could not read " << fileName << " (the file is damaged)\n";
             return false;
+        }
+
+        lastDishId = j.value("lastDishId", 0);
+        lastVariantId = j.value("lastVariantId", 0);
+        lastCommentId = j.value("lastCommentId", 0);
+
+        for(json &dj : j["dishes"]){
+            Dish d;
+            d.fromJson(dj);
+            dishes.push_back(d);
         }
 
         // safety: if the counters in the file are behind (e.g. file edited by hand),
         // move them ahead of the biggest id that really exists, so ids never repeat
-        for(auto &d : dishes){
+        for(Dish &d : dishes){
             if(d.getId() > lastDishId) lastDishId = d.getId();
-            for(auto &v : d.getVariants()){
+            for(Variant &v : d.getVariants()){
                 if(v.getId() > lastVariantId) lastVariantId = v.getId();
+                for(Comment &c : v.getComments()){
+                    if(c.getId() > lastCommentId) lastCommentId = c.getId();
+                }
             }
         }
 
@@ -389,19 +1063,21 @@ public:
         json j;
         j["lastDishId"] = lastDishId;
         j["lastVariantId"] = lastVariantId;
+        j["lastCommentId"] = lastCommentId;
         j["dishes"] = json::array();
-        for(auto &d : dishes){
+        for(Dish &d : dishes){
             j["dishes"].push_back(d.toJson());
         }
 
-        makeBackup();
+        string text = jsonToText(j);      // make the text FIRST, so a problem can never empty the file
+        makeBackupOf(fileName, backupName);
 
         ofstream outFile(fileName);
         if(!outFile){
             cout << "ERROR: could not write to " << fileName << "\n";
             return false;
         }
-        outFile << j.dump(4, ' ', false, json::error_handler_t::replace);
+        outFile << text;
         outFile.close();
         return !outFile.fail();
     }
@@ -416,10 +1092,15 @@ public:
         return lastVariantId;
     }
 
+    int nextCommentId(){
+        lastCommentId++;
+        return lastCommentId;
+    }
+
     // position of the dish in the list, or -1 if not found
     int findDishIndex(string dishName){
-        for(size_t i = 0; i < dishes.size(); i++){
-            if(toLowerCase(dishes[i].getName()) == toLowerCase(dishName)) return (int)i;
+        for(int i = 0; i < (int)dishes.size(); i++){
+            if(toLowerCase(dishes[i].getName()) == toLowerCase(dishName)) return i;
         }
         return -1;
     }
@@ -433,6 +1114,371 @@ public:
     vector<Dish>& getDishes(){
         return dishes;
     }
+
+    // finds a recipe by its id; dishIndex = -1 if it does not exist (any more)
+    RecipeRef findVariantById(int variantId){
+        for(int d = 0; d < (int)dishes.size(); d++){
+            vector<Variant> &vars = dishes[d].getVariants();
+            for(int v = 0; v < (int)vars.size(); v++){
+                if(vars[v].getId() == variantId) return makeRef(d, v);
+            }
+        }
+        return makeRef(-1, -1);
+    }
+
+    // all recipes uploaded by one user
+    vector<RecipeRef> findByOwner(int ownerId){
+        vector<RecipeRef> result;
+        for(int d = 0; d < (int)dishes.size(); d++){
+            vector<Variant> &vars = dishes[d].getVariants();
+            for(int v = 0; v < (int)vars.size(); v++){
+                if(vars[v].getOwnerId() == ownerId){
+                    result.push_back(makeRef(d, v));
+                }
+            }
+        }
+        return result;
+    }
+
+    // deletes one recipe; if its dish has no recipes left, the empty dish is removed too
+    void removeVariant(int dishIndex, int variantIndex){
+        vector<Variant> &vars = dishes[dishIndex].getVariants();
+        vars.erase(vars.begin() + variantIndex);
+        if(vars.size() == 0){
+            dishes.erase(dishes.begin() + dishIndex);
+        }
+    }
+
+    // which recipes of this user would stay and which would be deleted
+    DeletionPlan planAccountDeletion(int userId){
+        DeletionPlan plan;
+        vector<RecipeRef> mine = findByOwner(userId);
+        for(RecipeRef &ref : mine){
+            Variant &v = dishes[ref.dishIndex].getVariants()[ref.variantIndex];
+            if(isGoodRecipe(v)) plan.keep.push_back(ref);
+            else plan.remove.push_back(ref);
+        }
+        return plan;
+    }
+
+    // removes every rating, vote and comment that this user ever made
+    void removeUserActivity(int userId){
+        for(Dish &d : dishes){
+            for(Variant &v : d.getVariants()){
+                v.getRatings().removeUser(userId);
+                v.getReactions().removeUser(userId);
+
+                vector<Comment> &list = v.getComments();
+                for(int i = (int)list.size() - 1; i >= 0; i--){
+                    if(list[i].getUserId() == userId){
+                        list.erase(list.begin() + i);
+                    }
+                }
+                for(Comment &c : list){
+                    c.getReactions().removeUser(userId);
+                }
+            }
+        }
+    }
+
+    // Everything for deleting an account: the user's comments, ratings and likes go;
+    // recipes with a GOOD RECORD stay (owner becomes "Deleted user"), the others are deleted.
+    void deleteAccountData(int userId){
+        removeUserActivity(userId);
+
+        for(int d = (int)dishes.size() - 1; d >= 0; d--){
+            vector<Variant> &vars = dishes[d].getVariants();
+            for(int v = (int)vars.size() - 1; v >= 0; v--){
+                if(vars[v].getOwnerId() != userId) continue;
+
+                if(isGoodRecipe(vars[v])) vars[v].setOwnerId(DELETED_OWNER);
+                else vars.erase(vars.begin() + v);
+            }
+            if(vars.size() == 0){
+                dishes.erase(dishes.begin() + d);
+            }
+        }
+    }
 };
+
+// ------------------------------------------------------------
+//  PART H: UserDatabase - loads/saves all accounts in users.json
+// ------------------------------------------------------------
+class UserDatabase {
+protected:
+    int lastUserId = 0;
+    vector<User> users;
+    string fileName = "users.json";
+    string backupName = "users.backup.json";
+
+public:
+    bool load(){
+        users.clear();
+        lastUserId = 0;
+
+        string text = readWholeFile(fileName);
+        if(text.size() == 0) return true;               // no file yet (or empty file) = no users
+
+        json j = json::parse(text, nullptr, false);
+        if(j.is_discarded() || !j.contains("users") || !j["users"].is_array()){
+            cout << "ERROR: could not read " << fileName << " (the file is damaged)\n";
+            return false;
+        }
+
+        lastUserId = j.value("lastUserId", 0);
+
+        for(json &uj : j["users"]){
+            User u;
+            u.fromJson(uj);
+            users.push_back(u);
+        }
+
+        for(User &u : users){
+            if(u.getId() > lastUserId) lastUserId = u.getId();
+        }
+
+        return true;
+    }
+
+    bool save(){
+        json j;
+        j["lastUserId"] = lastUserId;
+        j["users"] = json::array();
+        for(User &u : users){
+            j["users"].push_back(u.toJson());
+        }
+
+        string text = jsonToText(j);
+        makeBackupOf(fileName, backupName);
+
+        ofstream outFile(fileName);
+        if(!outFile){
+            cout << "ERROR: could not write to " << fileName << "\n";
+            return false;
+        }
+        outFile << text;
+        outFile.close();
+        return !outFile.fail();
+    }
+
+    int nextUserId(){
+        lastUserId++;
+        return lastUserId;
+    }
+
+    // position in the list, or -1. Capital/small letters don't matter: "Abeer" = "abeer"
+    int findIndexByUsername(string username){
+        for(int i = 0; i < (int)users.size(); i++){
+            if(toLowerCase(users[i].getUsername()) == toLowerCase(username)) return i;
+        }
+        return -1;
+    }
+
+    int findIndexById(int id){
+        for(int i = 0; i < (int)users.size(); i++){
+            if(users[i].getId() == id) return i;
+        }
+        return -1;
+    }
+
+    int addUser(User u){
+        users.push_back(u);
+        return (int)users.size() - 1;
+    }
+
+    void removeUser(int index){
+        users.erase(users.begin() + index);
+    }
+
+    vector<User>& getUsers(){
+        return users;
+    }
+
+    // username for an id. "Deleted user" for recipes that stayed after their
+    // account was deleted, "unknown" for old recipes that have no owner.
+    string nameOf(int id){
+        if(id == DELETED_OWNER) return "Deleted user";
+        int index = findIndexById(id);
+        if(index == -1) return "unknown";
+        return users[index].getUsername();
+    }
+};
+
+// ------------------------------------------------------------
+//  PART I: showing a recipe page (rating, likes, comments)
+// ------------------------------------------------------------
+
+bool isOwnerOf(Variant &variant, int userId){
+    return userId > 0 && variant.getOwnerId() == userId;
+}
+
+// A hidden comment can only be seen by the recipe owner and by the person who wrote it
+bool canSeeComment(Variant &variant, Comment &comment, int viewerId){
+    if(!comment.isHidden()) return true;
+    return isOwnerOf(variant, viewerId) || comment.getUserId() == viewerId;
+}
+
+// positions of the comments this viewer is allowed to see
+vector<int> visibleCommentIndexes(Variant &variant, int viewerId){
+    vector<int> result;
+    for(int i = 0; i < (int)variant.getComments().size(); i++){
+        if(canSeeComment(variant, variant.getComments()[i], viewerId)) result.push_back(i);
+    }
+    return result;
+}
+
+// text for a vote - in the Flutter app this decides the colour of the like/dislike buttons
+string voteText(int vote){
+    if(vote > 0) return "[LIKED]";
+    if(vote < 0) return "[DISLIKED]";
+    return "no vote";
+}
+
+// Shows the recipe, the viewer's own rating/vote, and the comments.
+// maxComments = how many of the LATEST comments to show (0 = show all)
+void showRecipePage(Dish &dish, Variant &variant, UserDatabase &users, int viewerId, int maxComments){
+    variant.show(dish.getName(), users.nameOf(variant.getOwnerId()));
+
+    int myRating = variant.getRatings().getRating(viewerId);
+    string myRatingText = "not rated yet";
+    if(myRating > 0) myRatingText = to_string(myRating) + "/5";
+    cout << "Your rating: " << myRatingText
+         << "   Your vote: " << voteText(variant.getReactions().getVote(viewerId)) << "\n";
+
+    vector<int> visible = visibleCommentIndexes(variant, viewerId);
+    int hiddenFromViewer = (int)variant.getComments().size() - (int)visible.size();
+
+    cout << "COMMENTS (" << visible.size() << "):\n";
+
+    int first = 0;
+    if(maxComments > 0 && (int)visible.size() > maxComments){
+        first = (int)visible.size() - maxComments;
+        cout << " ... " << first << " older comment(s) not shown\n";
+    }
+
+    for(int i = first; i < (int)visible.size(); i++){
+        Comment &c = variant.getComments()[visible[i]];
+
+        cout << " " << i + 1 << ". " << users.nameOf(c.getUserId());
+        if(isOwnerOf(variant, c.getUserId())) cout << " (Owner)";
+        cout << "  " << readableDate(c.getCreatedAt());
+        if(c.isHidden()) cout << "  [HIDDEN by the owner]";
+        cout << "\n    " << c.getText() << "\n";
+        cout << "    Likes: " << c.getReactions().likes()
+             << "  Dislikes: " << c.getReactions().dislikes()
+             << "  Your vote: " << voteText(c.getReactions().getVote(viewerId)) << "\n";
+    }
+
+    if(hiddenFromViewer > 0){
+        cout << " (" << hiddenFromViewer << " comment(s) hidden by the owner)\n";
+    }
+}
+
+// ------------------------------------------------------------
+//  PART J: searching
+// ------------------------------------------------------------
+
+// removes filler words like "and", "the", "with" (they are not real ingredients)
+vector<string> removeStopWords(vector<string> words){
+    string stopWords[7] = {"and", "the", "a", "an", "with", "or", "of"};
+    vector<string> result;
+
+    for(int i = 0; i < (int)words.size(); i++){
+        bool isStopWord = false;
+        for(int k = 0; k < 7; k++){
+            if(words[i] == stopWords[k]) isStopWord = true;
+        }
+        if(!isStopWord) result.push_back(words[i]);
+    }
+
+    return result;
+}
+
+// the words that really count in what the user typed
+vector<string> searchWords(string keyword){
+    return removeStopWords(splitWords(keyword));
+}
+
+// Every typed word must be found somewhere (dish name, variant name, ingredients, steps)
+bool matchesAllWords(Dish &dish, Variant &variant, vector<string> &words){
+    for(int i = 0; i < (int)words.size(); i++){
+        bool found = textHasWordStart(dish.getName(), words[i])
+                  || textHasWordStart(variant.getName(), words[i])
+                  || variant.getRecipe().hasWord(words[i]);
+        if(!found) return false;
+    }
+    return true;
+}
+
+// "Best match" = a typed word is exactly in the dish name, variant name or MAIN ingredient
+bool isBestMatch(Dish &dish, Variant &variant, vector<string> &words){
+    for(int i = 0; i < (int)words.size(); i++){
+        if(textHasWord(dish.getName(), words[i])
+           || textHasWord(variant.getName(), words[i])
+           || textHasWord(variant.getRecipe().getMainIngredient(), words[i])){
+            return true;
+        }
+    }
+    return false;
+}
+
+class SearchResult {
+public:
+    vector<RecipeRef> best;
+    vector<RecipeRef> others;
+};
+
+// is recipe a better than recipe b?  (higher average rating, then more ratings, then more likes)
+bool isBetterRecipe(RecipeDatabase &db, RecipeRef a, RecipeRef b){
+    Variant &va = db.getDishes()[a.dishIndex].getVariants()[a.variantIndex];
+    Variant &vb = db.getDishes()[b.dishIndex].getVariants()[b.variantIndex];
+
+    if(va.getRatings().average() != vb.getRatings().average()){
+        return va.getRatings().average() > vb.getRatings().average();
+    }
+    if(va.getRatings().count() != vb.getRatings().count()){
+        return va.getRatings().count() > vb.getRatings().count();
+    }
+
+    int scoreA = va.getReactions().likes() - va.getReactions().dislikes();
+    int scoreB = vb.getReactions().likes() - vb.getReactions().dislikes();
+    return scoreA > scoreB;
+}
+
+// puts the best recipes first (simple "insertion sort"; recipes that are equal keep their order)
+void sortBestFirst(RecipeDatabase &db, vector<RecipeRef> &list){
+    for(int i = 1; i < (int)list.size(); i++){
+        RecipeRef current = list[i];
+        int j = i - 1;
+        while(j >= 0 && isBetterRecipe(db, current, list[j])){
+            list[j + 1] = list[j];
+            j--;
+        }
+        list[j + 1] = current;
+    }
+}
+
+// Finds matching recipes. Inside each group the best rated recipes come first.
+SearchResult searchRecipes(RecipeDatabase &db, string keyword){
+    SearchResult result;
+    vector<string> words = searchWords(keyword);
+    if(words.size() == 0) return result;
+
+    for(int d = 0; d < (int)db.getDishes().size(); d++){
+        Dish &dish = db.getDishes()[d];
+        for(int v = 0; v < (int)dish.getVariants().size(); v++){
+            Variant &variant = dish.getVariants()[v];
+            if(!matchesAllWords(dish, variant, words)) continue;
+
+            if(isBestMatch(dish, variant, words)) result.best.push_back(makeRef(d, v));
+            else result.others.push_back(makeRef(d, v));
+        }
+    }
+
+    sortBestFirst(db, result.best);
+    sortBestFirst(db, result.others);
+
+    return result;
+}
 
 #endif

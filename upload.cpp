@@ -1,28 +1,13 @@
 #include <iostream>
-#include <cstdlib>
-#include "RecipeCore.h"
+#include "ConsoleTools.h"
 using namespace std;
 
-// Reads one line from the keyboard. If input is closed (Ctrl+D / end of input),
-// we stop safely and save nothing.
-string readLine(){
-    string line;
-    if(!getline(cin, line)){
-        cout << "\nInput ended. Nothing was saved.\n";
-        exit(0);
-    }
-    return line;
-}
-
-// Keeps asking until the user types something (empty answer is not accepted)
-string askRequired(string question){
-    while(true){
-        cout << question;
-        string answer = tidyName(readLine());
-        if(!answer.empty()) return answer;
-        cout << "This cannot be empty. Please try again.\n";
-    }
-}
+// ============================================================
+//  upload.cpp  -  upload, edit and delete YOUR OWN recipes
+//  (log in first). Pattern used for every save:
+//  ask everything -> load the newest file -> change -> save,
+//  so changes made meanwhile by other programs are never lost.
+// ============================================================
 
 // Asks for items one by one until the user types 'done' (at least 1 item is required)
 vector<string> askList(string intro, string itemName, bool isSteps){
@@ -36,13 +21,13 @@ vector<string> askList(string intro, string itemName, bool isSteps){
         string line = trimSpaces(readLine());
 
         if(toLowerCase(line) == "done"){
-            if(items.empty()){
+            if(items.size() == 0){
                 cout << "Please add at least one " << itemName << " before typing 'done'.\n";
                 continue;
             }
             break;
         }
-        if(line.empty()) continue;      // ignore accidental empty Enter
+        if(line.size() == 0) continue;      // ignore accidental empty Enter
         items.push_back(line);
     }
     return items;
@@ -54,23 +39,18 @@ int askCookingTime(){
         cout << "Cooking time in minutes (number only, e.g. 45): ";
         string text = trimSpaces(readLine());
 
-        try{
-            size_t used = 0;
-            int minutes = stoi(text, &used);
-            if(used == text.size() && minutes > 0 && minutes <= 10000) return minutes;
-        }
-        catch(...){
-            // not a number -> falls through to the message below
+        if(isWholeNumber(text)){
+            int minutes = stoi(text);
+            if(minutes > 0 && minutes <= 10000) return minutes;
         }
         cout << "Please enter a valid number of minutes (1 to 10000).\n";
     }
 }
 
-int main(){
-    RecipeDatabase db;
+void uploadRecipe(RecipeDatabase &db, int userId, string username){
     if(!db.load()){
         cout << "Stopped, so your saved recipes are not overwritten.\n";
-        return 1;
+        return;
     }
 
     // ---------- STEP 1: DISH name ----------
@@ -79,33 +59,25 @@ int main(){
     int dishIndex = db.findDishIndex(dishName);
 
     if(dishIndex == -1){
-        // brand new dish
-        Dish newDish;
-        newDish.setName(dishName);
-        newDish.setId(db.nextDishId());      // id comes from the counter saved in the file
-        newDish.autoSetDate();
-        dishIndex = db.addDish(newDish);
-        cout << "New dish created: " << dishName << "\n";
+        cout << "New dish: " << dishName << "\n";
     }
     else{
         // dish already exists -> we only add a new variant under it
         Dish &existing = db.getDishes()[dishIndex];
         cout << "Dish '" << existing.getName() << "' already exists. Its variants:\n";
-        for(auto &v : existing.getVariants()){
+        for(Variant &v : existing.getVariants()){
             cout << " - " << v.getName() << "\n";
         }
         cout << "Your recipe will be added as a new variant.\n";
     }
-
-    Dish &dish = db.getDishes()[dishIndex];
 
     // ---------- STEP 2: VARIANT name ----------
     string variantName;
     while(true){
         variantName = askRequired("Enter VARIANT name (e.g. Bombay Biryani): ");
 
-        if(dish.hasVariant(variantName)){
-            cout << "This variant already exists under " << dish.getName()
+        if(dishIndex != -1 && db.getDishes()[dishIndex].hasVariant(variantName)){
+            cout << "This variant already exists under " << db.getDishes()[dishIndex].getName()
                  << ". Please enter a different name.\n";
         }
         else{
@@ -113,39 +85,262 @@ int main(){
         }
     }
 
+    // ---------- STEP 3: RECIPE ----------
+    Recipe recipe;
+    recipe.setMainIngredient(askRequired("What is the MAIN ingredient? (e.g. rice for biryani): "));
+    recipe.setIngredients(askList("Enter ingredients one by one. Type 'done' when finished.", "ingredient", false));
+    recipe.setSteps(askList("Enter steps one by one. Type 'done' when finished.", "step", true));
+    recipe.setCookingTime(askCookingTime());
+
+    // ---------- SAVE (load the newest file first) ----------
+    if(!db.load()){
+        cout << "Stopped, so your saved recipes are not overwritten.\n";
+        return;
+    }
+
+    dishIndex = db.findDishIndex(dishName);
+    if(dishIndex == -1){
+        Dish newDish;
+        newDish.setName(dishName);
+        newDish.setId(db.nextDishId());      // id comes from the counter saved in the file
+        newDish.autoSetDate();
+        dishIndex = db.addDish(newDish);
+    }
+
+    Dish &dish = db.getDishes()[dishIndex];
+
+    if(dish.hasVariant(variantName)){
+        cout << "Somebody just added a variant with this name. Your recipe was NOT saved - please try again.\n";
+        return;
+    }
+
     Variant variant;
     variant.setName(variantName);
     variant.setId(db.nextVariantId());
+    variant.setOwnerId(userId);              // remembers WHO uploaded it
     variant.autoSetDate();
+    variant.getRecipe() = recipe;
 
-    // ---------- STEP 3: RECIPE ----------
-    Recipe &recipe = variant.getRecipe();
-
-    recipe.setMainIngredient(askRequired("What is the MAIN ingredient? (e.g. rice for biryani): "));
-
-    vector<string> ingredients = askList("Enter ingredients one by one. Type 'done' when finished.", "ingredient", false);
-    for(auto &ing : ingredients){
-        recipe.addIngredient(ing);
-    }
-
-    vector<string> steps = askList("Enter steps one by one. Type 'done' when finished.", "step", true);
-    for(auto &s : steps){
-        recipe.addStep(s);
-    }
-
-    recipe.setCookingTime(askCookingTime());
-
-    // ---------- SAVE ----------
     dish.addVariant(variant);
 
     if(db.save()){
         cout << "\nRecipe saved successfully!\n";
-        variant.show(dish.getName());
+        variant.show(dish.getName(), username);
     }
     else{
         cout << "\nSomething went wrong, recipe was NOT saved.\n";
-        return 1;
+    }
+}
+
+// Shows the user's OWN recipes as a numbered list and lets them pick one.
+// Returns the recipe's id, or 0 if there is nothing to pick or the user cancels.
+int chooseMyRecipe(RecipeDatabase &db, int userId, string action){
+    vector<RecipeRef> mine = db.findByOwner(userId);
+
+    if(mine.size() == 0){
+        cout << "You have not uploaded any recipe yet.\n";
+        return 0;
     }
 
+    cout << "\nYour recipes:\n";
+    for(int i = 0; i < (int)mine.size(); i++){
+        cout << " " << i + 1 << ". " << describeRecipe(db, mine[i]) << "\n";
+    }
+
+    int choice = askChoice("Enter the number of the recipe to " + action + " (0 to cancel): ", 0, (int)mine.size());
+    if(choice == 0) return 0;
+
+    RecipeRef ref = mine[choice - 1];
+    return db.getDishes()[ref.dishIndex].getVariants()[ref.variantIndex].getId();
+}
+
+void editRecipe(RecipeDatabase &db, int userId, string username){
+    if(!db.load()){
+        cout << "Stopped, so your saved recipes are not overwritten.\n";
+        return;
+    }
+
+    int variantId = chooseMyRecipe(db, userId, "edit");
+    if(variantId == 0) return;
+
+    RecipeRef ref = db.findVariantById(variantId);
+    Dish &dish = db.getDishes()[ref.dishIndex];
+    Variant edited = dish.getVariants()[ref.variantIndex];     // a working COPY - the original stays safe until you save
+    Recipe &recipe = edited.getRecipe();
+
+    while(true){
+        edited.show(dish.getName(), username);
+        cout << "\nWhat do you want to change?\n";
+        cout << " 1. Variant name\n";
+        cout << " 2. Main ingredient\n";
+        cout << " 3. Ingredients (type the full list again)\n";
+        cout << " 4. Steps (type the full list again)\n";
+        cout << " 5. Cooking time\n";
+        cout << " 6. SAVE changes and finish\n";
+        cout << " 0. Cancel (throw away changes)\n";
+        int choice = askChoice("Choice: ", 0, 6);
+
+        if(choice == 0){
+            cout << "Cancelled. Nothing was changed.\n";
+            return;
+        }
+        else if(choice == 1){
+            while(true){
+                string newName = askRequired("New variant name: ");
+
+                bool taken = false;
+                for(int i = 0; i < (int)dish.getVariants().size(); i++){
+                    if(i == ref.variantIndex) continue;      // the recipe itself doesn't count
+                    if(toLowerCase(dish.getVariants()[i].getName()) == toLowerCase(newName)) taken = true;
+                }
+                if(taken){
+                    cout << "This variant name already exists under " << dish.getName() << ". Try another.\n";
+                    continue;
+                }
+                edited.setName(newName);
+                break;
+            }
+        }
+        else if(choice == 2){
+            recipe.setMainIngredient(askRequired("New main ingredient: "));
+        }
+        else if(choice == 3){
+            recipe.setIngredients(askList("Type ALL ingredients again, one by one. Type 'done' when finished.", "ingredient", false));
+        }
+        else if(choice == 4){
+            recipe.setSteps(askList("Type ALL steps again, one by one. Type 'done' when finished.", "step", true));
+        }
+        else if(choice == 5){
+            recipe.setCookingTime(askCookingTime());
+        }
+        else if(choice == 6){
+            break;
+        }
+    }
+
+    // ---------- SAVE: load the newest file and change ONLY name + recipe ----------
+    // (ratings, likes and comments that others added while you were editing stay safe)
+    if(!db.load()){
+        cout << "Stopped, so your saved recipes are not overwritten.\n";
+        return;
+    }
+
+    RecipeRef fresh = db.findVariantById(variantId);
+    if(fresh.dishIndex == -1){
+        cout << "This recipe no longer exists. Nothing was saved.\n";
+        return;
+    }
+
+    Dish &freshDish = db.getDishes()[fresh.dishIndex];
+    Variant &target = freshDish.getVariants()[fresh.variantIndex];
+
+    if(target.getOwnerId() != userId){
+        cout << "This recipe is not yours any more. Nothing was saved.\n";
+        return;
+    }
+
+    for(int i = 0; i < (int)freshDish.getVariants().size(); i++){
+        if(i == fresh.variantIndex) continue;
+        if(toLowerCase(freshDish.getVariants()[i].getName()) == toLowerCase(edited.getName())){
+            cout << "Somebody just used this variant name. Nothing was saved - please try again.\n";
+            return;
+        }
+    }
+
+    target.setName(edited.getName());
+    target.getRecipe() = edited.getRecipe();
+    target.markEdited();
+
+    if(db.save()){
+        cout << "\nRecipe updated successfully!\n";
+        target.show(freshDish.getName(), username);
+    }
+    else{
+        cout << "\nSomething went wrong, changes were NOT saved.\n";
+    }
+}
+
+void deleteRecipe(RecipeDatabase &db, int userId, string username){
+    if(!db.load()){
+        cout << "Stopped, so your saved recipes are not overwritten.\n";
+        return;
+    }
+
+    int variantId = chooseMyRecipe(db, userId, "delete");
+    if(variantId == 0) return;
+
+    RecipeRef ref = db.findVariantById(variantId);
+    Dish &dish = db.getDishes()[ref.dishIndex];
+    dish.getVariants()[ref.variantIndex].show(dish.getName(), username);
+
+    cout << "\nThis recipe will be deleted permanently (with its ratings and comments). Type yes to confirm: ";
+    if(toLowerCase(trimSpaces(readLine())) != "yes"){
+        cout << "Cancelled. The recipe was not deleted.\n";
+        return;
+    }
+
+    // load the newest file, then delete
+    if(!db.load()){
+        cout << "Stopped, so your saved recipes are not overwritten.\n";
+        return;
+    }
+
+    ref = db.findVariantById(variantId);
+    if(ref.dishIndex == -1){
+        cout << "This recipe was already deleted.\n";
+        return;
+    }
+    if(db.getDishes()[ref.dishIndex].getVariants()[ref.variantIndex].getOwnerId() != userId){
+        cout << "This recipe is not yours. Nothing was deleted.\n";
+        return;
+    }
+
+    db.removeVariant(ref.dishIndex, ref.variantIndex);     // (also removes the dish if it became empty)
+
+    if(db.save()) cout << "Recipe deleted.\n";
+    else cout << "Something went wrong, the recipe was NOT deleted.\n";
+}
+
+int main(){
+    RecipeDatabase db;
+    UserDatabase users;
+
+    while(true){
+        int userId = loginGate(users);          // nobody gets in without an account
+        if(userId == 0) break;
+
+        string username = users.nameOf(userId);
+        bool loggedIn = true;
+
+        while(loggedIn){
+            cout << "\n===== Logged in as: " << username << " =====\n";
+            cout << " 1. Upload a new recipe\n";
+            cout << " 2. Edit my recipe\n";
+            cout << " 3. Delete my recipe\n";
+            cout << " 4. Change password\n";
+            cout << " 5. Delete my account\n";
+            cout << " 6. Log out\n";
+            cout << " 0. Exit\n";
+            int choice = askChoice("Choice: ", 0, 6);
+
+            if(choice == 0){
+                cout << "Bye!\n";
+                return 0;
+            }
+            else if(choice == 1) uploadRecipe(db, userId, username);
+            else if(choice == 2) editRecipe(db, userId, username);
+            else if(choice == 3) deleteRecipe(db, userId, username);
+            else if(choice == 4) changePassword(users, userId);
+            else if(choice == 5){
+                if(deleteAccount(db, users, userId)) loggedIn = false;
+            }
+            else if(choice == 6){
+                logOut(users, userId);
+                loggedIn = false;
+            }
+        }
+    }
+
+    cout << "Bye!\n";
     return 0;
 }
