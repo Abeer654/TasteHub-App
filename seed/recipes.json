@@ -1,0 +1,229 @@
+{
+    "dishes": [
+        {
+            "createdAt": "2026-10-10T20:06:00Z",
+            "id": 1,
+            "name": "Fries",
+            "variants": [
+                {
+                    "createdAt": "2026-10-10T20:06:00Z",
+                    "id": 1,
+                    "name": "Crispy Fries",
+                    "ownerId": 1,
+                    "ratings": [],
+                    "recipe": {
+                        "cookingTime": 5,
+                        "ingredients": [
+                            "potato",
+                            "oil",
+                            "spices",
+                            "salt"
+                        ],
+                        "mainIngredient": "Potato And Oil",
+                        "steps": [
+                            "pour oil",
+                            "make it upto 90C",
+                            "fry potato",
+                            "add spices"
+                        ]
+                    },
+                    "updatedAt": "",
+                    "imageRef": "asset:assets/images/fries.jpg",
+                    "youtubeUrl": "https://www.youtube.com/results?search_query=crispy+fries+recipe"
+                }
+            ]
+        },
+        {
+            "createdAt": "2026-10-10T20:12:00Z",
+            "id": 2,
+            "name": "Pulao",
+            "variants": [
+                {
+                    "createdAt": "2026-10-10T20:12:00Z",
+                    "id": 2,
+                    "name": "Hydrabadi Pulao",
+                    "ownerId": 1,
+                    "ratings": [
+                        {
+                            "stars": 3,
+                            "userId": 1
+                        }
+                    ],
+                    "recipe": {
+                        "cookingTime": 40,
+                        "ingredients": [
+                            "rice",
+                            "chicken",
+                            "spices",
+                            "garlic paste"
+                        ],
+                        "mainIngredient": "Rice, And Chicken",
+                        "steps": [
+                            "fry onion",
+                            "add garlic paste",
+                            "then make yakni",
+                            "add rices"
+                        ]
+                    },
+                    "updatedAt": "",
+                    "imageRef": "asset:assets/images/pulao.jpg",
+                    "youtubeUrl": "https://www.youtube.com/results?search_query=hyderabadi+pulao+recipe"
+                }
+            ]
+        },
+        {
+            "createdAt": "2026-10-11T12:49:00Z",
+            "id": 3,
+            "name": "Karahi",
+            "variants": [
+                {
+                    "createdAt": "2026-10-11T12:49:00Z",
+                    "id": 3,
+                    "name": "Peshawari Karahi",
+                    "ownerId": 1,
+                    "ratings": [
+                        {
+                            "stars": 4,
+                            "userId": 1
+                        }
+                    ],
+                    "recipe": {
+                        "cookingTime": 60,
+                        "ingredients": [
+                            "tomato",
+                            "chillies",
+                            "garlic paste",
+                            "salt",
+                            "oil"
+                        ],
+                        "mainIngredient": "Mutton",
+                        "steps": [
+                            "add oil",
+                            "fry mutton",
+                            "add chillies and garlic paste",
+                            "then add tomato"
+                        ]
+                    },
+                    "updatedAt": "",
+                    "imageRef": "asset:assets/images/karahi.jpg",
+                    "youtubeUrl": "https://www.youtube.com/results?search_query=peshawari+karahi+recipe"
+                }
+            ]
+        },
+        {
+            "createdAt": "2026-10-11T13:05:55Z",
+            "id": 4,
+            "name": "chicken tikka",
+            "variants": [
+                {
+                    "createdAt": "2026-10-11T13:06:12Z",
+                    "id": 4,
+                    "name": "spicy chicken tikka",
+                    "ownerId": 1,
+                    "ratings": [],
+                    "recipe": {
+                        "cookingTime": 60,
+                        "ingredients": [
+                            "coal",
+                            "oil",
+                            "spices",
+                            "yogurt"
+                        ],
+                        "mainIngredient": "chicken",
+                        "steps": [
+                            "cola",
+                            "chicken"
+                        ]
+                    },
+                    "updatedAt": "",
+                    "imageRef": "asset:assets/images/chicken-tikka.jpg",
+                    "youtubeUrl": "https://www.youtube.com/results?search_query=chicken+tikka+recipe"
+                }
+            ]
+        },
+        {
+            "id": 5,
+            "name": "Biryani",
+            "createdAt": "2026-10-20T18:00:00Z",
+            "variants": [
+                {
+                    "id": 5,
+                    "name": "Chicken Biryani",
+                    "ownerId": 1,
+                    "createdAt": "2026-10-20T18:00:00Z",
+                    "updatedAt": "",
+                    "recipe": {
+                        "mainIngredient": "rice",
+                        "ingredients": [
+                            "rice",
+                            "chicken",
+                            "yogurt",
+                            "spices",
+                            "onion"
+                        ],
+                        "steps": [
+                            "marinate the chicken",
+                            "fry the onions",
+                            "layer rice and chicken",
+                            "cook on low heat"
+                        ],
+                        "cookingTime": 60
+                    },
+                    "ratings": [
+                        {
+                            "userId": 1,
+                            "stars": 5
+                        },
+                        {
+                            "userId": 2,
+                            "stars": 4
+                        }
+                    ],
+                    "imageRef": "asset:assets/images/biryani.jpg",
+                    "youtubeUrl": "https://www.youtube.com/results?search_query=chicken+biryani+recipe"
+                }
+            ]
+        },
+        {
+            "id": 6,
+            "name": "Nihari",
+            "createdAt": "2026-10-22T09:30:00Z",
+            "variants": [
+                {
+                    "id": 6,
+                    "name": "Beef Nihari",
+                    "ownerId": 1,
+                    "createdAt": "2026-10-22T09:30:00Z",
+                    "updatedAt": "",
+                    "recipe": {
+                        "mainIngredient": "beef",
+                        "ingredients": [
+                            "beef",
+                            "flour",
+                            "spices",
+                            "ginger"
+                        ],
+                        "steps": [
+                            "cook the beef slowly",
+                            "add the flour slurry",
+                            "simmer until thick",
+                            "garnish with ginger"
+                        ],
+                        "cookingTime": 180
+                    },
+                    "ratings": [
+                        {
+                            "userId": 1,
+                            "stars": 4
+                        }
+                    ],
+                    "imageRef": "asset:assets/images/nihari.jpg",
+                    "youtubeUrl": "https://www.youtube.com/results?search_query=beef+nihari+recipe"
+                }
+            ]
+        }
+    ],
+    "lastCommentId": 0,
+    "lastDishId": 6,
+    "lastVariantId": 6
+}

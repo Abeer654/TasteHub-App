@@ -1,6 +1,92 @@
+# ============================================================
+# TasteHub - things that should NOT be on GitHub
+# ============================================================
+
+# --- Secrets and local machine config ---
+.env
+.env.*
+!.env.example
 Api key.txt
-output/session.txt
-output/users.json
-output/users.backup.json
 opencode.jsonc
-techstack.md
+.ignore
+.vscode/
+.idea/
+*.iml
+
+# --- C++ build output ---
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.exe
+*.out
+*.gcda
+*.gcno
+
+# Compiled demo programs (root only, so source names are safe)
+/upload
+/search
+/rating
+/backend_test
+/tastehub-server
+
+# --- Runtime data and logs ---
+data/
+output/
+*.log
+*.tmp
+*.temp
+*.swp
+*~
+*.bak
+*.backup.json
+
+# Console demos write these next to their executable when run from the root.
+/session.txt
+/users.json
+/users.backup.json
+/recipes.json
+/recipes.backup.json
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Flutter / Dart ---
+.dart_tool/
+.packages
+.pub/
+.pub-cache/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.apk
+*.aab
+*.ipa
+android/.gradle/
+android/local.properties
+android/key.properties
+android/app/debug/
+android/app/profile/
+android/app/release/
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+macos/Pods/
+windows/flutter/ephemeral/
+linux/flutter/ephemeral/
+
+# --- Python (seed/smoke scripts) ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/

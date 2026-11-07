@@ -2,8 +2,10 @@
 #define RECIPECORE_H
 
 // ============================================================
-//  RecipeCore.h  -  the ONE shared file used by ALL programs
-//  (upload.cpp, search.cpp, rating.cpp).  This is what links them.
+//  RecipeCore.h  -  shared domain model + JSON storage
+//
+//  Used by upload.cpp, search.cpp, rating.cpp, backend_test.cpp and (through
+//  BackendService.h) the Stage 2 HTTP server.
 //
 //  What is inside (read it from top to bottom):
 //    PART A  small helper functions (text, dates, files)
@@ -23,6 +25,7 @@
 #include <vector>
 #include <string>
 #include <ctime>
+#include <cstdio>
 #include <random>
 #include "json.hpp"
 using namespace std;
@@ -111,12 +114,24 @@ string twoDigits(int number){
     return to_string(number);
 }
 
-// Current date and time in a format Flutter/Dart can read: 2026-10-10T18:30:05
+// Current UTC date and time in a format Flutter/Dart can read:
+// 2026-10-10T18:30:05Z
 string currentTimeText(){
     time_t now = time(0);
-    tm *t = localtime(&now);          // t points to the broken-down time (year, month, ...)
-    return to_string(t->tm_year + 1900) + "-" + twoDigits(t->tm_mon + 1) + "-" + twoDigits(t->tm_mday)
-         + "T" + twoDigits(t->tm_hour) + ":" + twoDigits(t->tm_min) + ":" + twoDigits(t->tm_sec);
+    tm t;
+
+    // Always store timestamps in UTC with a trailing "Z".
+    // Flutter/Dart can parse this directly, and it avoids timezone drift
+    // when the laptop and the phone are in different time zones.
+#ifdef _WIN32
+    gmtime_s(&t, &now);
+#else
+    gmtime_r(&now, &t);
+#endif
+
+    char buffer[32];
+    strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &t);
+    return string(buffer);
 }
 
 // 2026-10-10T18:30:05 -> 2026-10-10 18:30:05
@@ -369,6 +384,11 @@ protected:
     string createdAt;
 
 public:
+    // Stage 1 uses this base class to prove runtime polymorphism:
+    // RecipeDatabase::save() calls toJson() through a BaseEntity&.
+    virtual ~BaseEntity() = default;
+    virtual json toJson() = 0;
+
     void setId(int newId){
         id = newId;
     }
@@ -478,11 +498,13 @@ public:
     }
 };
 
-// one star rating (1 to 5) of one user
+// One 1-5 star rating from one user.
+// proofImageRef is an optional photo that proves the user cooked the recipe.
 class Rating {
 public:
-    int userId;
-    int stars;
+    int userId = 0;
+    int stars = 0;
+    string proofImageRef;
 };
 
 // Ratings: all star ratings of ONE recipe (one rating per user)
@@ -499,7 +521,18 @@ public:
         return 0;
     }
 
-    // returns false if the user already gave exactly this rating
+    // The proof photo this user attached to their rating.
+    // Returns "" when the user has not rated or did not attach a photo.
+    string getProofImageRef(int userId){
+        for(Rating &r : list){
+            if(r.userId == userId) return r.proofImageRef;
+        }
+        return "";
+    }
+
+    // Updates the stars only. If the user already attached a proof photo,
+    // it stays unchanged. Used by the old console rating program.
+    // Returns false if the user already gave exactly this rating.
     bool setRating(int userId, int stars){
         for(Rating &r : list){
             if(r.userId == userId){
@@ -511,6 +544,26 @@ public:
         Rating newRating;
         newRating.userId = userId;
         newRating.stars = stars;
+        list.push_back(newRating);
+        return true;
+    }
+
+    // Updates the stars and the proof photo together.
+    // An empty proofImageRef clears the photo.
+    bool setRatingWithProof(int userId, int stars, string proofImageRef){
+        for(Rating &r : list){
+            if(r.userId == userId){
+                if(r.stars == stars && r.proofImageRef == proofImageRef) return false;
+                r.stars = stars;
+                r.proofImageRef = proofImageRef;
+                return true;
+            }
+        }
+
+        Rating newRating;
+        newRating.userId = userId;
+        newRating.stars = stars;
+        newRating.proofImageRef = proofImageRef;
         list.push_back(newRating);
         return true;
     }
@@ -540,6 +593,7 @@ public:
             json j;
             j["userId"] = r.userId;
             j["stars"] = r.stars;
+            j["proofImageRef"] = r.proofImageRef;
             array.push_back(j);
         }
         return array;
@@ -551,6 +605,7 @@ public:
             Rating r;
             r.userId = j.value("userId", 0);
             r.stars = j.value("stars", 0);
+            r.proofImageRef = j.value("proofImageRef", string(""));
             list.push_back(r);
         }
     }
@@ -594,7 +649,7 @@ public:
         return reactions;
     }
 
-    json toJson(){
+    json toJson() override {
         json j;
         j["id"] = id;
         j["userId"] = userId;
@@ -611,7 +666,7 @@ public:
         text = j.value("text", string(""));
         createdAt = j.value("createdAt", string(""));
         hidden = j.value("hidden", false);
-        if(j.contains("votes")) reactions.fromJson(j["votes"]);
+        if(j.contains("votes") && j["votes"].is_array()) reactions.fromJson(j["votes"]);
     }
 };
 
@@ -646,6 +701,16 @@ public:
 
     string getMainIngredient(){
         return mainIngredient;
+    }
+
+    // Returning references keeps the Stage 1 search and JSON code from copying
+    // every ingredient/step list on every request.
+    vector<string>& getIngredients(){
+        return ingredients;
+    }
+
+    vector<string>& getSteps(){
+        return steps;
     }
 
     int getCookingTime(){
@@ -706,6 +771,8 @@ protected:
     Ratings ratings;
     Reactions reactions;         // likes / dislikes of the recipe
     vector<Comment> comments;
+    string imageRef;             // asset path, web URL, or local phone path
+    string youtubeUrl;           // YouTube link for the recipe
 
 public:
     void setName(string n){
@@ -726,6 +793,26 @@ public:
 
     int getOwnerId(){
         return ownerId;
+    }
+
+    string getUpdatedAt(){
+        return updatedAt;
+    }
+
+    void setImageRef(string value){
+        imageRef = value;
+    }
+
+    string getImageRef(){
+        return imageRef;
+    }
+
+    void setYoutubeUrl(string value){
+        youtubeUrl = value;
+    }
+
+    string getYoutubeUrl(){
+        return youtubeUrl;
     }
 
     Ratings& getRatings(){
@@ -784,7 +871,7 @@ public:
         cout << "----------------------------\n";
     }
 
-    json toJson(){
+    json toJson() override {
         json j;
         j["id"] = id;
         j["name"] = name;
@@ -798,6 +885,8 @@ public:
         for(Comment &c : comments){
             j["comments"].push_back(c.toJson());
         }
+        j["imageRef"] = imageRef;
+        j["youtubeUrl"] = youtubeUrl;
         return j;
     }
 
@@ -807,13 +896,16 @@ public:
         createdAt = j.value("createdAt", string(""));
         ownerId = j.value("ownerId", 0);               // old recipes have no owner -> 0
         updatedAt = j.value("updatedAt", string(""));
+        imageRef = j.value("imageRef", string(""));
+        youtubeUrl = j.value("youtubeUrl", string(""));
         if(j.contains("recipe")) recipe.fromJson(j["recipe"]);
 
-        // old recipes have no ratings / votes / comments yet
-        if(j.contains("ratings")) ratings.fromJson(j["ratings"]);
-        if(j.contains("votes")) reactions.fromJson(j["votes"]);
+        // Old recipes may not have every array. Guard each one so a partial
+        // or hand-edited JSON file cannot crash the backend at startup.
+        if(j.contains("ratings") && j["ratings"].is_array()) ratings.fromJson(j["ratings"]);
+        if(j.contains("votes") && j["votes"].is_array()) reactions.fromJson(j["votes"]);
         comments.clear();
-        if(j.contains("comments")){
+        if(j.contains("comments") && j["comments"].is_array()){
             for(json &cj : j["comments"]){
                 Comment c;
                 c.fromJson(cj);
@@ -869,7 +961,7 @@ public:
         return false;
     }
 
-    json toJson(){
+    json toJson() override {
         json j;
         j["id"] = id;
         j["name"] = name;
@@ -886,10 +978,12 @@ public:
         name = j.value("name", string(""));
         createdAt = j.value("createdAt", string(""));
         variants.clear();
-        for(json &vj : j["variants"]){
-            Variant v;
-            v.fromJson(vj);
-            variants.push_back(v);
+        if(j.contains("variants") && j["variants"].is_array()){
+            for(json &vj : j["variants"]){
+                Variant v;
+                v.fromJson(vj);
+                variants.push_back(v);
+            }
         }
     }
 };
@@ -954,7 +1048,7 @@ public:
         sessionHash = "";
     }
 
-    json toJson(){
+    json toJson() override {
         json j;
         j["id"] = id;
         j["username"] = username;
@@ -1007,6 +1101,8 @@ public:
     vector<RecipeRef> remove;     // deleted
 };
 
+// Owns the in-memory Dish/Variant tree and serializes it to one JSON file.
+// The console programs use the default folder; BackendService passes "data".
 class RecipeDatabase {
 protected:
     int lastDishId = 0;
@@ -1017,6 +1113,14 @@ protected:
     string backupName = "recipes.backup.json";
 
 public:
+    // The default "." keeps the old console programs working unchanged.
+    // The HTTP layer later passes a folder such as "data" or a --data-dir value.
+    explicit RecipeDatabase(string dataFolder = "."){
+        if(dataFolder.empty()) dataFolder = ".";
+        fileName = dataFolder + "/recipes.json";
+        backupName = dataFolder + "/recipes.backup.json";
+    }
+
     // Returns false only if the file exists but is damaged/unreadable
     bool load(){
         dishes.clear();
@@ -1066,22 +1170,42 @@ public:
         j["lastCommentId"] = lastCommentId;
         j["dishes"] = json::array();
         for(Dish &d : dishes){
-            j["dishes"].push_back(d.toJson());
+            // Call through the base class on purpose. This is the runtime
+            // polymorphism demonstration: BaseEntity::toJson() dispatches to
+            // Dish::toJson(), and each Dish serializes its own Variants.
+            BaseEntity &entity = d;
+            j["dishes"].push_back(entity.toJson());
         }
 
         string text = jsonToText(j);      // make the text FIRST, so a problem can never empty the file
         makeBackupOf(fileName, backupName);
 
-        ofstream outFile(fileName);
-        if(!outFile){
-            cout << "ERROR: could not write to " << fileName << "\n";
+        // Atomic save: write the complete new file to a temporary name, then
+        // rename it over the real file. If the process dies mid-write, the old
+        // recipes.json stays intact.
+        string tempName = fileName + ".tmp";
+        {
+            ofstream outFile(tempName);
+            if(!outFile){
+                cout << "ERROR: could not write to " << tempName << "\n";
+                return false;
+            }
+            outFile << text;
+            outFile.flush();
+            if(!outFile){
+                cout << "ERROR: could not write to " << tempName << "\n";
+                return false;
+            }
+        }
+
+        if(std::rename(tempName.c_str(), fileName.c_str()) != 0){
+            cout << "ERROR: could not replace " << fileName << "\n";
             return false;
         }
-        outFile << text;
-        outFile.close();
-        return !outFile.fail();
+        return true;
     }
 
+    // Ids are monotonic and never reused, even after a recipe is deleted.
     int nextDishId(){
         lastDishId++;
         return lastDishId;

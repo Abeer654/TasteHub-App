@@ -1,3 +1,0 @@
-# Keep third-party / generated files out of ripgrep-based searches (glob, grep).
-# OpenCode's glob and grep tools use ripgrep, which honors .ignore.
-json.hpp
