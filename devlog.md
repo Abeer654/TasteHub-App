@@ -32,7 +32,7 @@ What works today:
 backend_test.cpp
       |
       v
-BackendService.h          <-- validation, mutex, JSON shapes, fuzzy search
+BackendService.h          <-- validation, mutex, JSON shapes
       |
       v
 RecipeCore.h              <-- OOP model + RecipeDatabase storage
@@ -50,7 +50,7 @@ same.
 
 | File | Role |
 |---|---|
-| `RecipeCore.h` | Domain classes and JSON storage |
+| `RecipeCore.h` | Domain classes, JSON storage and shared fuzzy search |
 | `BackendService.h` | Backend facade used by the test and future HTTP server |
 | `backend_test.cpp` | Stage 1 acceptance test |
 | `API.md` | Frozen request/response contract |
@@ -155,9 +155,11 @@ by `BackendService`.
 
 ### Fuzzy search
 
-Search is implemented in `BackendService`, not in the HTTP layer.
+Search lives in `RecipeCore.h` (`findRecipeMatches`), so the future HTTP server
+and the console programs all use exactly the same matcher. `BackendService`
+only turns the ranked hits into JSON.
 
-For every query word, the service scores the best matching word in:
+The matcher is word-based. It scores each query word against:
 
 - recipe title
 - dish name
@@ -170,34 +172,46 @@ Scoring:
 | Match | Score |
 |---|---:|
 | exact word | 100 |
-| text word starts with query | 85 |
+| simple plural/singular (`fries`/`fry`, `onions`/`onion`) | 95 |
+| text word starts with query (`chick` → `chicken`) | 85 |
 | query starts with text word | 75 |
-| Levenshtein distance 1 | 60 |
-| Levenshtein distance 2 (query length ≥ 5) | 40 |
-| trigram similarity ≥ 0.5 | 30–50 |
+| one typo (Damerau-Levenshtein distance 1) | 60 |
+| two typos, only when the words still look related | 40 |
 
-Title matches are multiplied by 3, dish and main-ingredient matches by 2.
-Ingredient and step matches use the base score.
+Damerau-Levenshtein counts a swapped letter pair as one typo, so `briyani`
+matches `biryani`. A word inside another word is not treated as a typo:
+`oil` does not match `boil`.
 
-Every query word must match something, otherwise the recipe is excluded. This is
-AND-style search, which avoids returning everything for a multi-word query.
+Field weights: title ×3, dish and main ingredient ×2, ingredients and steps ×1.
+A multi-word query also gets a phrase bonus when it matches the whole title or
+dish name.
 
-Short queries are protected from fuzzy noise. Edit distance and trigram matching
-only run when the query word is at least 4 characters, so `oil` does not
-fuzzy-match `boil`.
+AND search: every query word must match somewhere. Common filler words
+(`recipe`, `how`, `to`, `make`, `dish`, `food`, `best`, etc.) are removed before
+searching, so `how to make biryani` and `biryani recipe` both find Biryani.
+
+Steps are matched more strictly than names and ingredients. This prevents
+noise such as `fries` matching every recipe whose steps say `fry`,
+`tomato` matching `potato`, or `ticka` matching `thick`.
 
 Examples verified by the test:
 
 | Query | Result |
 |---|---|
-| `biriyani` | Chicken Biryani |
+| `biriyani` / `briyani` | Chicken Biryani |
 | `chiken` | Chicken Biryani and spicy chicken tikka |
-| `karai` | Peshawari Karahi |
-| `peshawri` | Peshawari Karahi |
+| `chiken biryani` | Chicken Biryani first |
+| `biryani recipe` | Chicken Biryani |
+| `how to make biryani` | Chicken Biryani |
+| `karai` / `peshawri` | Peshawari Karahi |
+| `bif nihari` | Beef Nihari |
+| `fries` / `frys` | Crispy Fries only |
+| `ticka` | spicy chicken tikka only |
+| `tomato` | Peshawari Karahi only |
 | `xyz` | no results |
 
-Results are sorted by score first, then average rating, rating count and id.
-That keeps the best textual match first while using rating quality as a
+Results are sorted by text score first, then average rating, rating count and
+id. That keeps the best textual match first while using rating quality as a
 tie-breaker.
 
 ### BackendService methods
@@ -362,13 +376,9 @@ g++ -std=c++17 -O2 rating.cpp -o /tmp/opencode/rating
 - No comment API. `Comment` remains for OOP evidence.
 - No like/dislike API. `Reactions` remains for OOP evidence.
 - No image upload server. `imageRef` and `proofImageRef` store paths or URLs.
-- The old console programs still read `./recipes.json` by default. They compile,
-  but the demo does not run them.
-- The old console `search.cpp` still uses the original exact/prefix search.
-  Typo-tolerant search lives in `BackendService` and is what Stage 2 exposes.
-- `UserDatabase` is unchanged and is not used by Stage 1 because the demo has no
-  login. It keeps the old non-atomic save path for now.
-- Multi-process access is not locked. One server process is assumed.
+- The console programs now use `data/recipes.json`, the same runtime folder as
+  the Stage 2 server. They still keep accounts in the root `users.json`.
+- Only one server process is assumed; multi-process access is not locked.
 - `RecipeCore.h` still defines non-inline free functions, so each executable
   must stay a single translation unit.
 

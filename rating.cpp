@@ -341,7 +341,8 @@ void findAndOpenRecipe(RecipeDatabase &db, UserDatabase &users, int userId, stri
 }
 
 int main(){
-    RecipeDatabase db;
+    // Use the same runtime folder as the Stage 2 server.
+    RecipeDatabase db("data");
     UserDatabase users;
 
     while(true){

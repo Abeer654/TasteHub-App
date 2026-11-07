@@ -302,7 +302,8 @@ void deleteRecipe(RecipeDatabase &db, int userId, string username){
 }
 
 int main(){
-    RecipeDatabase db;
+    // Use the same runtime folder as the Stage 2 server.
+    RecipeDatabase db("data");
     UserDatabase users;
 
     while(true){

@@ -41,7 +41,9 @@ void showResults(RecipeDatabase &db, UserDatabase &users, int userId, string key
 }
 
 int main(){
-    RecipeDatabase db;
+    // Use the same runtime folder as the Stage 2 server, so recipes uploaded
+    // in the console are visible through the API and vice versa.
+    RecipeDatabase db("data");
     UserDatabase users;
 
     while(true){

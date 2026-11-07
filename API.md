@@ -165,6 +165,11 @@ Rules:
 GET /api/search?q=biriyani
 ```
 
+Search is case-insensitive and typo-tolerant. It looks at dish names, recipe
+titles, main ingredients, ingredients and steps. Common filler words such as
+`recipe`, `dish`, `how`, `to` and `make` are ignored, so `how to make biryani`
+and `biryani recipe` both work. Every remaining query word must match somewhere.
+
 Response:
 
 ```json

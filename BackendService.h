@@ -14,15 +14,14 @@
 //      That keeps a response safe after the lock is released.
 //    - Every mutation saves immediately. Saves are atomic inside
 //      RecipeDatabase::save() (temp file + rename).
-//    - Search is implemented here, not in the HTTP layer, using exact,
-//      prefix, Levenshtein and trigram scoring for typo tolerance.
+//    - Search is implemented in the shared RecipeCore matcher, using exact,
+//      plural, prefix and Damerau-Levenshtein scoring for typo tolerance.
+//      The HTTP layer only formats the ranked results as JSON.
 // ============================================================
 
-#include <algorithm>
 #include <filesystem>
 #include <mutex>
 #include <optional>
-#include <set>
 #include <stdexcept>
 #include "RecipeCore.h"
 
@@ -302,50 +301,14 @@ public:
     json searchRecipes(const string& query){
         std::lock_guard<std::mutex> lock(mutex);
 
-        vector<string> words = searchWords(query);
+        // findRecipeMatches() lives in RecipeCore so the console programs and
+        // the future HTTP server all share exactly the same ranking rules.
         json results = json::array();
-        if(words.empty()){
-            return json{{"query", query}, {"results", results}};
+        for(RecipeSearchHit &hit : findRecipeMatches(db, query)){
+            Dish &dish = db.getDishes()[hit.ref.dishIndex];
+            Variant &variant = dish.getVariants()[hit.ref.variantIndex];
+            results.push_back(summaryJson(dish, variant));
         }
-
-        // One row per matching recipe. The summary is built now, while the lock
-        // is held, so the caller never receives a reference into the database.
-        struct Hit {
-            int score;
-            double averageRating;
-            int ratingCount;
-            int id;
-            json summary;
-        };
-        vector<Hit> hits;
-
-        for(Dish &dish : db.getDishes()){
-            for(Variant &variant : dish.getVariants()){
-                int score = scoreRecipe(dish, variant, words);
-                if(score > 0){
-                    hits.push_back(Hit{score,
-                                       variant.getRatings().average(),
-                                       variant.getRatings().count(),
-                                       variant.getId(),
-                                       summaryJson(dish, variant)});
-                }
-            }
-        }
-
-        // Higher score first; ties use rating quality, then id for stable output.
-        auto betterHitFirst = [](const Hit& a, const Hit& b){
-            if(a.score != b.score) return a.score > b.score;
-            if(a.averageRating != b.averageRating){
-                return a.averageRating > b.averageRating;
-            }
-            if(a.ratingCount != b.ratingCount){
-                return a.ratingCount > b.ratingCount;
-            }
-            return a.id < b.id;
-        };
-        std::sort(hits.begin(), hits.end(), betterHitFirst);
-
-        for(Hit &hit : hits) results.push_back(hit.summary);
         return json{{"query", query}, {"results", results}};
     }
 
@@ -537,103 +500,6 @@ private:
         json j;
         addRatingFields(j, variant);
         return j;
-    }
-
-    // --------------------------------------------------------
-    //  Fuzzy search helpers
-    // --------------------------------------------------------
-
-    // Best score of one query word against any word in a piece of text.
-    int bestWordScore(const string& query, const string& text){
-        int best = 0;
-        for(const string& word : splitWords(text)){
-            best = std::max(best, wordScore(query, word));
-        }
-        return best;
-    }
-
-    // Scores one query word against one text word:
-    //   100 exact | 85 text starts with query | 75 query starts with text
-    //    60 one typo | 40 two typos (long queries) | 30-50 similar trigrams
-    int wordScore(const string& query, const string& word){
-        if(query.empty() || word.empty()) return 0;
-
-        if(query == word) return 100;
-        if(word.rfind(query, 0) == 0) return 85;
-        if(query.rfind(word, 0) == 0) return 75;
-
-        // Short queries are too noisy for edit distance and trigrams:
-        // "oil" should not fuzzy-match "boil". Exact/prefix still work above.
-        if(query.size() < 4) return 0;
-
-        int distance = levenshtein(query, word);
-        if(distance == 1) return 60;
-        if(distance == 2 && query.size() >= 5) return 40;
-
-        double similarity = trigramSimilarity(query, word);
-        if(similarity >= 0.5) return (int)(30 + similarity * 20);
-        return 0;
-    }
-
-    // Classic edit distance: insert, delete or substitute one character = cost 1.
-    int levenshtein(const string& a, const string& b){
-        vector<int> previous(b.size() + 1);
-        vector<int> current(b.size() + 1);
-        for(size_t j = 0; j <= b.size(); j++) previous[j] = (int)j;
-
-        for(size_t i = 1; i <= a.size(); i++){
-            current[0] = (int)i;
-            for(size_t j = 1; j <= b.size(); j++){
-                int cost = (a[i - 1] == b[j - 1]) ? 0 : 1;
-                current[j] = std::min({previous[j] + 1,
-                                       current[j - 1] + 1,
-                                       previous[j - 1] + cost});
-            }
-            previous.swap(current);
-        }
-        return previous[b.size()];
-    }
-
-    // Dice similarity over 3-character slices: 1.0 = identical, 0.0 = no overlap.
-    // This catches longer typos that plain edit distance scores too harshly.
-    double trigramSimilarity(const string& a, const string& b){
-        if(a.size() < 3 || b.size() < 3) return 0.0;
-
-        std::set<string> first;
-        std::set<string> second;
-        for(size_t i = 0; i + 3 <= a.size(); i++) first.insert(a.substr(i, 3));
-        for(size_t i = 0; i + 3 <= b.size(); i++) second.insert(b.substr(i, 3));
-
-        int common = 0;
-        for(const string& trigram : first){
-            if(second.count(trigram)) common++;
-        }
-        return (2.0 * common) / (first.size() + second.size());
-    }
-
-    // Every query word must score somewhere. Dish and title matches are
-    // weighted higher so a search for "biryani" puts the Biryani dish first.
-    int scoreRecipe(Dish& dish, Variant& variant, const vector<string>& words){
-        int total = 0;
-        Recipe& recipe = variant.getRecipe();
-
-        for(const string& word : words){
-            int best = 0;
-            best = std::max(best, bestWordScore(word, variant.getName()) * 3);
-            best = std::max(best, bestWordScore(word, dish.getName()) * 2);
-            best = std::max(best, bestWordScore(word, recipe.getMainIngredient()) * 2);
-
-            for(const string& ingredient : recipe.getIngredients()){
-                best = std::max(best, bestWordScore(word, ingredient));
-            }
-            for(const string& step : recipe.getSteps()){
-                best = std::max(best, bestWordScore(word, step));
-            }
-
-            if(best == 0) return 0;
-            total += best;
-        }
-        return total;
     }
 };
 

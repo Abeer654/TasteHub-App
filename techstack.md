@@ -22,7 +22,7 @@ Flutter APK (phone) → Tailscale → C++ HTTP server (laptop) → JSON files
 | Frontend | Flutter (Android APK) | UI demo; existing Flutter toolchain |
 | HTTP client | Flutter `http` package | Standard and simple |
 | AI | Google Gemini free tier, called from Flutter | Avoids C++ HTTPS/OpenSSL; key via `--dart-define` or settings; local fallback |
-| Search | C++ fuzzy search (Levenshtein/trigram) | Typo tolerance; demonstrates C++ logic |
+| Search | C++ fuzzy search (plural + Damerau-Levenshtein) | Typo tolerance; demonstrates C++ logic |
 | Leaderboard | C++ rating/ranking | Average + count; optional Bayesian average |
 | Rating proof | Optional `proofImageRef` on each rating | User can attach a photo proving they cooked the recipe; path/URL only |
 | Images | Local files on phone; path/URL stored in JSON | No upload/static server needed for a single-phone demo |

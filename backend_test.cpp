@@ -64,6 +64,16 @@ static bool containsRecipeId(const json& results, int id){
     return false;
 }
 
+// Used by the console-search check below: RecipeCore returns RecipeRefs, not JSON.
+static bool refsContainRecipeId(RecipeDatabase& db, const vector<RecipeRef>& refs, int id){
+    for(const RecipeRef& ref : refs){
+        if(db.getDishes()[ref.dishIndex].getVariants()[ref.variantIndex].getId() == id){
+            return true;
+        }
+    }
+    return false;
+}
+
 static int leaderboardRank(const json& leaderboard, int id){
     for(const json& entry : leaderboard["leaderboard"]){
         if(entry["recipe"].value("id", -1) == id){
@@ -149,6 +159,62 @@ int main(){
         search = service->searchRecipes("peshawri");
         check(containsRecipeId(search["results"], 3),
               "search 'peshawri' finds Peshawari Karahi");
+
+        search = service->searchRecipes("briyani");
+        check(!search["results"].empty() && search["results"][0].value("id", -1) == 5,
+              "search 'briyani' handles swapped letters");
+
+        search = service->searchRecipes("chiken biryani");
+        check(!search["results"].empty() && search["results"][0].value("id", -1) == 5,
+              "multi-word typo search ranks Chicken Biryani first");
+
+        search = service->searchRecipes("biryani recipe");
+        check(containsRecipeId(search["results"], 5),
+              "search ignores the filler word 'recipe'");
+
+        search = service->searchRecipes("how to make biryani");
+        check(containsRecipeId(search["results"], 5),
+              "search ignores common question filler words");
+
+        search = service->searchRecipes("fries");
+        check(search["results"].size() == 1
+                  && search["results"][0].value("id", -1) == 1,
+              "search 'fries' does not match unrelated 'fry' steps");
+
+        search = service->searchRecipes("ticka");
+        check(search["results"].size() == 1
+                  && search["results"][0].value("id", -1) == 4,
+              "search 'ticka' does not match unrelated 'thick' steps");
+
+        search = service->searchRecipes("tomato");
+        check(search["results"].size() == 1
+                  && search["results"][0].value("id", -1) == 3,
+              "search 'tomato' does not match 'potato'");
+
+        search = service->searchRecipes("frys");
+        check(search["results"].size() == 1
+                  && search["results"][0].value("id", -1) == 1,
+              "search 'frys' finds Crispy Fries only");
+
+        search = service->searchRecipes("bif nihari");
+        check(containsRecipeId(search["results"], 6),
+              "short typo 'bif' finds Beef Nihari");
+
+        search = service->searchRecipes("potatos");
+        check(containsRecipeId(search["results"], 1),
+              "plural typo 'potatos' finds Crispy Fries");
+
+        search = service->searchRecipes("chiken");
+        check(!containsRecipeId(search["results"], 6),
+              "search 'chiken' does not match unrelated 'thick' steps");
+
+        // The console programs call the free searchRecipes() function in
+        // RecipeCore. It must use the same fuzzy matcher as the backend.
+        RecipeDatabase consoleDb(testDir);
+        check(consoleDb.load(), "console search database loads");
+        SearchResult consoleHits = searchRecipes(consoleDb, "chiken");
+        check(refsContainRecipeId(consoleDb, consoleHits.best, 5),
+              "console search uses the same fuzzy matcher");
 
         search = service->searchRecipes("xyz");
         check(search["results"].empty(), "search 'xyz' returns no results");
