@@ -32,7 +32,10 @@ Every error has the same shape:
 | `400` | Invalid input |
 | `404` | Recipe not found |
 | `409` | Duplicate title in the same dish |
+| `422` | AI could not extract ingredients or steps |
 | `500` | Server or file error |
+| `502` | Gemini request failed |
+| `503` | Gemini is not configured, rate-limited, or busy |
 
 ## Endpoints
 
@@ -42,6 +45,7 @@ Every error has the same shape:
 | `GET` | `/api/recipes` | List recipe summaries |
 | `GET` | `/api/recipes/:id` | One recipe with ingredients, steps and ratings |
 | `POST` | `/api/recipes` | Add a recipe |
+| `POST` | `/api/recipes/parse` | Turn a free-form description into an AI recipe draft |
 | `PUT` | `/api/recipes/:id` | Edit a recipe |
 | `DELETE` | `/api/recipes/:id` | Delete a recipe |
 | `GET` | `/api/search?q=...` | Typo-tolerant search |
@@ -125,6 +129,76 @@ Rules:
   - a web URL: `https://...`
   - a local phone path: `/data/user/0/.../recipe_123.jpg`
 - Dates are ISO-8601 UTC, for example `2026-11-06T12:30:00Z`.
+
+## AI recipe draft ("yap" input)
+
+```text
+POST /api/recipes/parse
+```
+
+The user describes a dish in their own words. Gemini extracts the fields a
+recipe needs. This endpoint **does not save anything**: the client shows the
+draft, then sends the `recipe` object to `POST /api/recipes` after the user
+confirms or edits it.
+
+Request:
+
+```json
+{
+  "text": "I made chicken biryani last night with rice, chicken, yogurt, onions and spices. I marinated the chicken, fried the onions, layered it with rice and cooked it on low heat for an hour."
+}
+```
+
+Response:
+
+```json
+{
+  "message": "That sounds delicious! Rice makes this chicken biryani truly wonderful.",
+  "recipe": {
+    "dish": "Biryani",
+    "title": "Chicken Biryani",
+    "mainIngredient": "rice",
+    "ingredients": ["rice", "chicken", "yogurt", "onions", "spices"],
+    "steps": [
+      "Marinate the chicken with yogurt and spices.",
+      "Fry the onions until golden brown.",
+      "Layer the chicken and rice.",
+      "Cook on low heat for an hour."
+    ],
+    "cookingTime": 60,
+    "imageRef": "",
+    "youtubeUrl": ""
+  },
+  "inferredFields": ["cookingTime"],
+  "followUpQuestions": ["How much rice did you use?"],
+  "source": "gemini"
+}
+```
+
+Rules:
+
+- `text` is required and should contain at least a sentence.
+- `recipe` uses exactly the `POST /api/recipes` fields, so it can be sent
+  directly after the user reviews it.
+- `mainIngredient` is the base that defines the dish (`rice` for biryani,
+  `mutton` for karahi, `potato` for fries).
+- `inferredFields` lists fields Gemini filled without the user saying them.
+  The UI should highlight these for confirmation.
+- `followUpQuestions` is optional and may be empty.
+- `source` is `gemini` in normal use. Tests can inject a fake extractor.
+- If Gemini cannot identify ingredients or steps, the endpoint returns `422`.
+- If the key is missing, the model is busy, or the network fails, the endpoint
+  returns `503` or `502`.
+
+Configuration:
+
+```text
+GEMINI_API_KEY=...
+GEMINI_MODEL=gemini-3.5-flash
+```
+
+Put these in `.env` (git-ignored) or the server environment. `.env.example`
+shows the names. The backend also tries a small fallback list of Gemini models.
 
 ## Rating
 

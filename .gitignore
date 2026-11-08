@@ -90,3 +90,8 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+
+# --- Local-only docs and history ---
+devlog.md
+techstack.md
+handover/
