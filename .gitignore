@@ -93,5 +93,6 @@ venv/
 
 # --- Local-only docs and history ---
 devlog.md
+plan.md
 techstack.md
 handover/
