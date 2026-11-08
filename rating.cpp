@@ -69,11 +69,9 @@ void rateRecipe(RecipeDatabase &db, UserDatabase &users, int userId, int variant
     RecipeRef ref;
     if(!loadAll(db, users) || !findRecipe(db, variantId, ref)) return;
 
-    if(isOwnerOf(db.getDishes()[ref.dishIndex].getVariants()[ref.variantIndex], userId)){
-        cout << "You cannot rate your own recipe.\n";
-        return;
-    }
-
+    // The Stage 1 demo has exactly one user, and the seed recipes are owned by
+    // that user. The HTTP API therefore allows rating your own recipe; the
+    // console follows the same rule so the rating flow works with the demo data.
     int stars = askChoice("Your rating from 1 (bad) to 5 (excellent), 0 to cancel: ", 0, 5);
     if(stars == 0) return;
 
@@ -81,12 +79,40 @@ void rateRecipe(RecipeDatabase &db, UserDatabase &users, int userId, int variant
     if(!loadAll(db, users) || !findRecipe(db, variantId, ref)) return;
     Variant &variant = db.getDishes()[ref.dishIndex].getVariants()[ref.variantIndex];
 
-    if(!variant.getRatings().setRating(userId, stars)){
+    // The proof image is optional, just like in the API. Pressing Enter keeps
+    // an existing proof; typing 'none' removes it; anything else is the new
+    // path or URL. setRating() intentionally leaves the proof untouched.
+    string existingProof = variant.getRatings().getProofImageRef(userId);
+    if(existingProof.empty()){
+        cout << "Proof image path or URL (optional, press Enter to skip): ";
+    }
+    else {
+        cout << "Current proof image: " << existingProof << "\n";
+        cout << "Proof image path or URL (Enter keeps it, type 'none' to remove): ";
+    }
+    string proofInput = trimSpaces(readLine());
+
+    bool changed = false;
+    if(proofInput.empty()){
+        changed = variant.getRatings().setRating(userId, stars);
+    }
+    else if(toLowerCase(proofInput) == "none"){
+        changed = variant.getRatings().setRatingWithProof(userId, stars, "");
+    }
+    else {
+        changed = variant.getRatings().setRatingWithProof(userId, stars, proofInput);
+    }
+
+    if(!changed){
         cout << "You had already given this rating. Nothing changed.\n";
         return;
     }
 
-    if(db.save()) cout << "Thank you! Your rating: " << stars << "/5\n";
+    if(db.save()){
+        cout << "Thank you! Your rating: " << stars << "/5\n";
+        string proof = variant.getRatings().getProofImageRef(userId);
+        if(!proof.empty()) cout << "Proof image: " << proof << "\n";
+    }
     else cout << "Something went wrong, your rating was NOT saved.\n";
 }
 

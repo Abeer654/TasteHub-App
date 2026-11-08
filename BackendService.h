@@ -20,9 +20,11 @@
 // ============================================================
 
 #include <filesystem>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
+#include "AiRecipe.h"
 #include "RecipeCore.h"
 
 // Carries the HTTP status code that Stage 2 should send to the client.
@@ -47,7 +49,13 @@ public:
     // dataDir is usually "data". seedFile is optional and exists mainly so
     // backend_test can point at seed/recipes.json while using its own test
     // directory instead of touching the real runtime data.
-    explicit BackendService(string dataDir, string seedFile = "") : db(dataDir) {
+    //
+    // recipeExtractor is optional too: production uses Gemini, while tests
+    // inject a fake extractor so they never touch the network.
+    explicit BackendService(string dataDir, string seedFile = "",
+                            std::shared_ptr<RecipeExtractor> recipeExtractor = nullptr)
+        : db(dataDir), extractor(std::move(recipeExtractor)) {
+        if(!extractor) extractor = std::make_shared<GeminiRecipeExtractor>();
         if(dataDir.empty()) dataDir = ".";
 
         std::filesystem::path dataPath(dataDir);
@@ -312,6 +320,34 @@ public:
         return json{{"query", query}, {"results", results}};
     }
 
+    // POST /api/recipes/parse - turn a casual description ("yap") into a
+    // draft recipe. It does NOT save anything: the client shows the draft,
+    // the user confirms or edits it, then calls POST /api/recipes.
+    json parseRecipeText(const string& text){
+        string cleaned = trimSpaces(text);
+        if(cleaned.size() < 10){
+            throw ApiException(400, "text is required and should describe the dish");
+        }
+
+        // Copy the extractor under the lock, then release it before the slow
+        // network call. A Gemini request must never block normal API traffic.
+        std::shared_ptr<RecipeExtractor> current;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            current = extractor;
+        }
+        if(!current){
+            throw ApiException(500, "Recipe extractor is not configured");
+        }
+
+        try {
+            return recipeDraftJson(current->extract(cleaned));
+        }
+        catch(const AiServiceError& error){
+            throw ApiException(error.status, error.what());
+        }
+    }
+
     // GET /api/leaderboard - rated recipes only, best average first.
     // A recipe with no ratings has no place on a leaderboard.
     json leaderboard(){
@@ -362,9 +398,32 @@ public:
 
 private:
     RecipeDatabase db;
-    std::mutex mutex;   // guards db; every public method locks it first
+    std::shared_ptr<RecipeExtractor> extractor;
+    std::mutex mutex;   // guards db and the extractor pointer
 
     // ---- Internal helpers (the caller already holds mutex) ----
+
+    // Response of POST /api/recipes/parse. "recipe" is exactly the object
+    // POST /api/recipes accepts, so the client can preview then save it.
+    json recipeDraftJson(const RecipeDraft& draft){
+        json recipe;
+        recipe["dish"] = draft.dish;
+        recipe["title"] = draft.title;
+        recipe["mainIngredient"] = draft.mainIngredient;
+        recipe["ingredients"] = draft.ingredients;
+        recipe["steps"] = draft.steps;
+        recipe["cookingTime"] = draft.cookingTime;
+        recipe["imageRef"] = draft.imageRef;
+        recipe["youtubeUrl"] = draft.youtubeUrl;
+
+        json result;
+        result["message"] = draft.message;
+        result["recipe"] = recipe;
+        result["inferredFields"] = draft.inferredFields;
+        result["followUpQuestions"] = draft.followUpQuestions;
+        result["source"] = draft.source;
+        return result;
+    }
 
     int countRecipes(){
         int count = 0;

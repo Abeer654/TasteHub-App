@@ -90,6 +90,31 @@ static json findRating(const json& ratings, int userId){
     return json();
 }
 
+// Offline stand-in for Gemini. The acceptance test must never need a network
+// connection or a real API key.
+class FakeRecipeExtractor : public RecipeExtractor {
+public:
+    RecipeDraft extract(const string& userText) override {
+        if(userText.find("explode") != string::npos){
+            throw AiServiceError(502, "fake Gemini failure");
+        }
+
+        RecipeDraft draft;
+        draft.dish = "Biryani";
+        draft.title = "Chicken Biryani";
+        draft.mainIngredient = "rice";
+        draft.ingredients = {"rice", "chicken", "yogurt", "spices", "onion"};
+        draft.steps = {"marinate the chicken", "fry the onions",
+                       "layer rice and chicken", "cook on low heat"};
+        draft.cookingTime = 60;
+        draft.message = "That sounds like a classic Chicken Biryani.";
+        draft.inferredFields = {"cookingTime"};
+        draft.followUpQuestions = {"How much rice did you use?"};
+        draft.source = "fake";
+        return draft;
+    }
+};
+
 int main(){
     const string testDir = "data/backend-test";
     const string seedFile = "seed/recipes.json";
@@ -99,7 +124,8 @@ int main(){
 
     try {
         unique_ptr<BackendService> service =
-            make_unique<BackendService>(testDir, seedFile);
+            make_unique<BackendService>(testDir, seedFile,
+                                        make_shared<FakeRecipeExtractor>());
 
         // ----------------------------------------------------
         // 1. Seed data loads correctly
@@ -221,6 +247,75 @@ int main(){
 
         search = service->searchRecipes("");
         check(search["results"].empty(), "empty search returns no results");
+
+        // ----------------------------------------------------
+        // 2b. Natural-language recipe extraction ("yap" flow)
+        // ----------------------------------------------------
+        json parsed = service->parseRecipeText(
+            "I made chicken biryani with rice, chicken, yogurt, onions and spices. "
+            "I marinated the chicken, fried onions, layered it with rice and cooked "
+            "it slowly on low heat.");
+        check(parsed["recipe"].value("title", "") == "Chicken Biryani",
+              "parse returns the extracted recipe title");
+        check(parsed["recipe"].value("mainIngredient", "") == "rice",
+              "parse returns the main ingredient");
+        check(parsed["recipe"]["ingredients"].size() == 5,
+              "parse returns the ingredient list");
+        check(parsed["recipe"]["steps"].size() == 4,
+              "parse returns the cooking steps");
+        check(parsed["recipe"].value("cookingTime", 0) == 60,
+              "parse returns the cooking time");
+        check(parsed.value("source", "") == "fake",
+              "parse reports which extractor was used");
+        check(parsed.value("message", "").find("Biryani") != string::npos,
+              "parse returns a friendly message");
+        check(parsed["inferredFields"].is_array()
+                  && !parsed["inferredFields"].empty(),
+              "parse marks fields the AI had to infer");
+        check(parsed["followUpQuestions"].is_array(),
+              "parse returns follow-up questions");
+        check(service->listRecipes().size() == 6,
+              "parse does not save the draft automatically");
+
+        expectApiError(400, "empty yap text returns 400", [&]{
+            service->parseRecipeText("  ");
+        });
+        expectApiError(502, "AI failure is translated to an API error", [&]{
+            service->parseRecipeText("please make this explode");
+        });
+
+        // Response parsing is tested without Gemini: the model can wrap JSON
+        // in markdown fences or send cookingTime as a string.
+        string fenced =
+            "```json\n"
+            "{\"dish\":\"Karahi\",\"title\":\"Peshawari Karahi\","
+            "\"mainIngredient\":\"mutton\",\"ingredients\":[\"mutton\",\"tomato\"],"
+            "\"steps\":[\"cook the mutton\",\"add tomato\"],\"cookingTime\":\"45\"}\n"
+            "```";
+        json geminiResponse;
+        json candidate;
+        candidate["content"]["parts"] = json::array({json{{"text", fenced}}});
+        geminiResponse["candidates"] = json::array({candidate});
+        RecipeDraft parsedDraft = aiParseGeminiResponse(geminiResponse.dump(), "");
+
+        check(parsedDraft.dish == "Karahi", "Gemini JSON fences are stripped");
+        check(parsedDraft.mainIngredient == "mutton",
+              "Gemini draft keeps the main ingredient");
+        check(parsedDraft.cookingTime == 45,
+              "Gemini string cooking time is converted to minutes");
+        check(parsedDraft.source == "gemini", "Gemini draft is marked as gemini");
+
+        bool incompleteRejected = false;
+        try {
+            aiParseDraftJson(
+                "{\"dish\":\"Test\",\"title\":\"Test\",\"mainIngredient\":\"rice\","
+                "\"ingredients\":[],\"steps\":[]}",
+                "gemini");
+        }
+        catch(const AiServiceError& e){
+            incompleteRejected = (e.status == 422);
+        }
+        check(incompleteRejected, "incomplete AI draft is rejected with 422");
 
         // ----------------------------------------------------
         // 3. Rating with a proof image, and image preservation

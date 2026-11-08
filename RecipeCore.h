@@ -1467,8 +1467,10 @@ void showRecipePage(Dish &dish, Variant &variant, UserDatabase &users, int viewe
     int myRating = variant.getRatings().getRating(viewerId);
     string myRatingText = "not rated yet";
     if(myRating > 0) myRatingText = to_string(myRating) + "/5";
-    cout << "Your rating: " << myRatingText
-         << "   Your vote: " << voteText(variant.getReactions().getVote(viewerId)) << "\n";
+    cout << "Your rating: " << myRatingText;
+    string myProof = variant.getRatings().getProofImageRef(viewerId);
+    if(!myProof.empty()) cout << "   Proof: " << myProof;
+    cout << "   Your vote: " << voteText(variant.getReactions().getVote(viewerId)) << "\n";
 
     vector<int> visible = visibleCommentIndexes(variant, viewerId);
     int hiddenFromViewer = (int)variant.getComments().size() - (int)visible.size();

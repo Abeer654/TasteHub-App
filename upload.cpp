@@ -1,4 +1,5 @@
 #include <iostream>
+#include "AiRecipe.h"
 #include "ConsoleTools.h"
 using namespace std;
 
@@ -7,7 +8,147 @@ using namespace std;
 //  (log in first). Pattern used for every save:
 //  ask everything -> load the newest file -> change -> save,
 //  so changes made meanwhile by other programs are never lost.
+//
+//  "Yap mode" lets the user describe the dish naturally. Gemini turns
+//  that paragraph into the same Recipe fields the step-by-step form uses.
 // ============================================================
+
+// Shows what Gemini understood before anything is saved.
+void showAiDraft(const RecipeDraft &draft){
+    cout << "\n===== AI RECIPE DRAFT =====\n";
+    cout << "Dish: " << draft.dish << "\n";
+    cout << "Title: " << draft.title << "\n";
+    cout << "Main ingredient: " << draft.mainIngredient << "\n";
+    cout << "Cooking time: " << draft.cookingTime << " minutes\n";
+
+    cout << "Ingredients:\n";
+    for(const string &item : draft.ingredients) cout << " - " << item << "\n";
+
+    cout << "Steps:\n";
+    for(int i = 0; i < (int)draft.steps.size(); i++){
+        cout << " " << i + 1 << ". " << draft.steps[i] << "\n";
+    }
+
+    if(!draft.imageRef.empty()) cout << "Image: " << draft.imageRef << "\n";
+    if(!draft.youtubeUrl.empty()) cout << "YouTube: " << draft.youtubeUrl << "\n";
+    if(!draft.message.empty()) cout << "\nAI: " << draft.message << "\n";
+
+    if(!draft.inferredFields.empty()){
+        cout << "AI filled in: ";
+        for(int i = 0; i < (int)draft.inferredFields.size(); i++){
+            if(i > 0) cout << ", ";
+            cout << draft.inferredFields[i];
+        }
+        cout << "\n";
+    }
+
+    if(!draft.followUpQuestions.empty()){
+        cout << "AI would ask:\n";
+        for(const string &question : draft.followUpQuestions){
+            cout << " - " << question << "\n";
+        }
+    }
+}
+
+// Natural-language upload. The user writes freely, Gemini extracts the
+// structured recipe, then the user confirms before we save anything.
+void uploadRecipeFromText(RecipeDatabase &db, int userId, string username){
+    if(!db.load()){
+        cout << "Stopped, so your saved recipes are not overwritten.\n";
+        return;
+    }
+
+    cout << "\nDescribe the dish in your own words. Mention the ingredients and how you make it.\n";
+    cout << "You can ramble; typos and Roman Urdu are fine.\n";
+    cout << "Type 'done' on its own line when you are finished.\n";
+
+    string text;
+    while(true){
+        string line = readLine();
+        if(toLowerCase(trimSpaces(line)) == "done") break;
+        text += line + "\n";
+    }
+
+    if(trimSpaces(text).empty()){
+        cout << "Nothing was written, so nothing was saved.\n";
+        return;
+    }
+
+    RecipeDraft draft;
+    try {
+        GeminiRecipeExtractor extractor;
+        draft = extractor.extract(text);
+    }
+    catch(const AiServiceError &error){
+        cout << "\nAI could not build the recipe: " << error.what() << "\n";
+        cout << "You can still use the step-by-step upload.\n";
+        return;
+    }
+
+    showAiDraft(draft);
+    cout << "\nSave this recipe? Type yes to save, anything else to cancel: ";
+    if(toLowerCase(trimSpaces(readLine())) != "yes"){
+        cout << "Cancelled. Nothing was saved.\n";
+        return;
+    }
+
+    // Reload after the (slow) AI call so a recipe added by another program
+    // meanwhile is not lost.
+    if(!db.load()){
+        cout << "Stopped, so your saved recipes are not overwritten.\n";
+        return;
+    }
+
+    // A dish cannot contain two recipes with the same title.
+    while(true){
+        int existingDish = db.findDishIndex(draft.dish);
+        if(existingDish < 0 || !db.getDishes()[existingDish].hasVariant(draft.title)){
+            break;
+        }
+        cout << "A recipe named '" << draft.title << "' already exists in '"
+             << draft.dish << "'.\n";
+        cout << "Enter a different title (or leave empty to cancel): ";
+        string newTitle = tidyName(readLine());
+        if(newTitle.empty()){
+            cout << "Cancelled. Nothing was saved.\n";
+            return;
+        }
+        draft.title = newTitle;
+    }
+
+    int dishIndex = db.findDishIndex(draft.dish);
+    if(dishIndex < 0){
+        Dish newDish;
+        newDish.setName(draft.dish);
+        newDish.setId(db.nextDishId());
+        newDish.autoSetDate();
+        dishIndex = db.addDish(newDish);
+    }
+
+    Dish &dish = db.getDishes()[dishIndex];
+
+    Variant variant;
+    variant.setName(draft.title);
+    variant.setId(db.nextVariantId());
+    variant.setOwnerId(userId);
+    variant.autoSetDate();
+    variant.getRecipe().setMainIngredient(draft.mainIngredient);
+    variant.getRecipe().setIngredients(draft.ingredients);
+    variant.getRecipe().setSteps(draft.steps);
+    variant.getRecipe().setCookingTime(draft.cookingTime);
+    variant.setImageRef(draft.imageRef);
+    variant.setYoutubeUrl(draft.youtubeUrl);
+
+    dish.addVariant(variant);
+
+    if(db.save()){
+        cout << "\nRecipe saved successfully!\n";
+        variant.show(dish.getName(), username);
+    }
+    else{
+        cout << "\nSomething went wrong, recipe was NOT saved.\n";
+    }
+}
 
 // Asks for items one by one until the user types 'done' (at least 1 item is required)
 vector<string> askList(string intro, string itemName, bool isSteps){
@@ -315,7 +456,7 @@ int main(){
 
         while(loggedIn){
             cout << "\n===== Logged in as: " << username << " =====\n";
-            cout << " 1. Upload a new recipe\n";
+            cout << " 1. Upload a new recipe (describe it or fill a form)\n";
             cout << " 2. Edit my recipe\n";
             cout << " 3. Delete my recipe\n";
             cout << " 4. Change password\n";
@@ -328,7 +469,16 @@ int main(){
                 cout << "Bye!\n";
                 return 0;
             }
-            else if(choice == 1) uploadRecipe(db, userId, username);
+            else if(choice == 1){
+                cout << "\nHow do you want to add the recipe?\n";
+                cout << " 1. Describe it in your own words (AI yap mode)\n";
+                cout << " 2. Fill it in step by step\n";
+                cout << " 0. Cancel\n";
+                int how = askChoice("Choice: ", 0, 2);
+
+                if(how == 1) uploadRecipeFromText(db, userId, username);
+                else if(how == 2) uploadRecipe(db, userId, username);
+            }
             else if(choice == 2) editRecipe(db, userId, username);
             else if(choice == 3) deleteRecipe(db, userId, username);
             else if(choice == 4) changePassword(users, userId);
