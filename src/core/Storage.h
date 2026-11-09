@@ -75,11 +75,12 @@ public:
             return false;
         }
 
-        lastDishId = j.value("lastDishId", 0);
-        lastVariantId = j.value("lastVariantId", 0);
-        lastCommentId = j.value("lastCommentId", 0);
+        lastDishId = jsonIntValue(j, "lastDishId", 0);
+        lastVariantId = jsonIntValue(j, "lastVariantId", 0);
+        lastCommentId = jsonIntValue(j, "lastCommentId", 0);
 
         for(json &dj : j["dishes"]){
+            if(!dj.is_object()) continue;
             Dish d;
             d.fromJson(dj);
             dishes.push_back(d);
@@ -294,9 +295,10 @@ public:
             return false;
         }
 
-        lastUserId = j.value("lastUserId", 0);
+        lastUserId = jsonIntValue(j, "lastUserId", 0);
 
         for(json &uj : j["users"]){
+            if(!uj.is_object()) continue;
             User u;
             u.fromJson(uj);
             users.push_back(u);
@@ -320,14 +322,28 @@ public:
         string text = jsonToText(j);
         makeBackupOf(fileName, backupName);
 
-        ofstream outFile(fileName);
-        if(!outFile){
-            cout << "ERROR: could not write to " << fileName << "\n";
+        // Atomic save, same as RecipeDatabase: write a temporary file first,
+        // then replace users.json. A crash mid-write cannot truncate accounts.
+        string tempName = fileName + ".tmp";
+        {
+            ofstream outFile(tempName);
+            if(!outFile){
+                cout << "ERROR: could not write to " << tempName << "\n";
+                return false;
+            }
+            outFile << text;
+            outFile.flush();
+            if(!outFile){
+                cout << "ERROR: could not write to " << tempName << "\n";
+                return false;
+            }
+        }
+
+        if(std::rename(tempName.c_str(), fileName.c_str()) != 0){
+            cout << "ERROR: could not replace " << fileName << "\n";
             return false;
         }
-        outFile << text;
-        outFile.close();
-        return !outFile.fail();
+        return true;
     }
 
     int nextUserId(){

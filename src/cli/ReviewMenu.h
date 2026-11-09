@@ -6,21 +6,13 @@
 //  it, write comments, like / dislike comments, delete your own
 //  comments and (recipe owner only) hide / show comments.
 //
+//  You must be logged in; the main menu logs you in once. Password and
+//  account actions live in Console.h and main.cpp.
 //  Every action: ask -> load newest files -> change -> save.
 // ============================================================
 
 #include "Console.h"
 #include "core/Search.h"
-
-// ============================================================
-//  ReviewMenu.h  -  find a recipe, then:
-//     rate it (1-5), like / dislike it, write comments,
-//     like / dislike comments, delete your own comments,
-//     and (recipe owner only) hide / show comments.
-//  You must be logged in; the main menu logs you in only ONCE.
-//  Password / account things live in Console.h and main.cpp.
-//  Every action: ask -> load newest files -> change -> save.
-// ============================================================
 
 // which comments can be picked from the list
 const int ANY_COMMENT = 0;          // any comment you can see

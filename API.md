@@ -54,7 +54,8 @@ Every error has the same shape:
 
 ## Recipe summary
 
-Returned by `GET /api/recipes` and inside search/leaderboard results.
+Returned by `GET /api/recipes` (as a JSON array) and inside search/leaderboard
+results.
 
 ```json
 {
@@ -130,7 +131,7 @@ Rules:
   - a local phone path: `/data/user/0/.../recipe_123.jpg`
 - Dates are ISO-8601 UTC, for example `2026-11-06T12:30:00Z`.
 
-## AI recipe draft ("yap" input)
+## AI recipe draft (natural-language input)
 
 ```text
 POST /api/recipes/parse

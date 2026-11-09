@@ -9,7 +9,7 @@
 //      make gemini-smoke
 //
 //  Or pass your own description:
-//      /tmp/opencode/tastehub-gemini-smoke "I made ..."
+//      ./build/gemini_smoke "I made ..."
 // ============================================================
 
 #include <iostream>

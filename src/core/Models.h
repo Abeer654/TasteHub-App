@@ -174,6 +174,33 @@ string jsonToText(json &j){
     return j.dump(4, ' ', false, json::error_handler_t::replace);
 }
 
+// Safe readers for hand-edited or partially written JSON. A missing field or a
+// wrong type falls back to a default instead of throwing during startup.
+string jsonStringValue(const json &j, const string &key, const string &fallback = ""){
+    if(!j.is_object() || !j.contains(key) || !j[key].is_string()) return fallback;
+    return j[key].get<string>();
+}
+
+int jsonIntValue(const json &j, const string &key, int fallback = 0){
+    if(!j.is_object() || !j.contains(key) || !j[key].is_number_integer()) return fallback;
+    return j[key].get<int>();
+}
+
+bool jsonBoolValue(const json &j, const string &key, bool fallback = false){
+    if(!j.is_object() || !j.contains(key) || !j[key].is_boolean()) return fallback;
+    return j[key].get<bool>();
+}
+
+vector<string> jsonStringList(const json &j, const string &key){
+    vector<string> result;
+    if(!j.is_object() || !j.contains(key) || !j[key].is_array()) return result;
+
+    for(const json &item : j[key]){
+        if(item.is_string()) result.push_back(item.get<string>());
+    }
+    return result;
+}
+
 // Splits text into lowercase WORDS. Letters/digits (and Urdu letters) stay together,
 // spaces, commas, dots etc. separate words:  "Rice, 2 cups" -> ["rice", "2", "cups"]
 vector<string> splitWords(string text){
@@ -482,10 +509,13 @@ public:
 
     void fromJson(json &list){
         votes.clear();
+        if(!list.is_array()) return;
+
         for(json &j : list){
+            if(!j.is_object()) continue;
             Vote v;
-            v.userId = j.value("userId", 0);
-            v.value = j.value("value", 0);
+            v.userId = jsonIntValue(j, "userId", 0);
+            v.value = jsonIntValue(j, "value", 0);
             votes.push_back(v);
         }
     }
@@ -594,11 +624,14 @@ public:
 
     void fromJson(json &array){
         list.clear();
+        if(!array.is_array()) return;
+
         for(json &j : array){
+            if(!j.is_object()) continue;
             Rating r;
-            r.userId = j.value("userId", 0);
-            r.stars = j.value("stars", 0);
-            r.proofImageRef = j.value("proofImageRef", string(""));
+            r.userId = jsonIntValue(j, "userId", 0);
+            r.stars = jsonIntValue(j, "stars", 0);
+            r.proofImageRef = jsonStringValue(j, "proofImageRef", "");
             list.push_back(r);
         }
     }
@@ -654,11 +687,13 @@ public:
     }
 
     void fromJson(json &j){
-        id = j.value("id", 0);
-        userId = j.value("userId", 0);
-        text = j.value("text", string(""));
-        createdAt = j.value("createdAt", string(""));
-        hidden = j.value("hidden", false);
+        if(!j.is_object()) return;
+
+        id = jsonIntValue(j, "id", 0);
+        userId = jsonIntValue(j, "userId", 0);
+        text = jsonStringValue(j, "text", "");
+        createdAt = jsonStringValue(j, "createdAt", "");
+        hidden = jsonBoolValue(j, "hidden", false);
         if(j.contains("votes") && j["votes"].is_array()) reactions.fromJson(j["votes"]);
     }
 };
@@ -745,10 +780,12 @@ public:
     }
 
     void fromJson(json &j){
-        mainIngredient = j.value("mainIngredient", string(""));
-        ingredients = j.value("ingredients", vector<string>());
-        steps = j.value("steps", vector<string>());
-        cookingTime = j.value("cookingTime", 0);
+        if(!j.is_object()) return;
+
+        mainIngredient = jsonStringValue(j, "mainIngredient", "");
+        ingredients = jsonStringList(j, "ingredients");
+        steps = jsonStringList(j, "steps");
+        cookingTime = jsonIntValue(j, "cookingTime", 0);
     }
 };
 
@@ -883,14 +920,16 @@ public:
     }
 
     void fromJson(json &j){
-        id = j.value("id", 0);
-        name = j.value("name", string(""));
-        createdAt = j.value("createdAt", string(""));
-        ownerId = j.value("ownerId", 0);               // old recipes have no owner -> 0
-        updatedAt = j.value("updatedAt", string(""));
-        imageRef = j.value("imageRef", string(""));
-        youtubeUrl = j.value("youtubeUrl", string(""));
-        if(j.contains("recipe")) recipe.fromJson(j["recipe"]);
+        if(!j.is_object()) return;
+
+        id = jsonIntValue(j, "id", 0);
+        name = jsonStringValue(j, "name", "");
+        createdAt = jsonStringValue(j, "createdAt", "");
+        ownerId = jsonIntValue(j, "ownerId", 0);        // old recipes have no owner -> 0
+        updatedAt = jsonStringValue(j, "updatedAt", "");
+        imageRef = jsonStringValue(j, "imageRef", "");
+        youtubeUrl = jsonStringValue(j, "youtubeUrl", "");
+        if(j.contains("recipe") && j["recipe"].is_object()) recipe.fromJson(j["recipe"]);
 
         // Old recipes may not have every array. Guard each one so a partial
         // or hand-edited JSON file cannot crash the backend at startup.
@@ -899,6 +938,7 @@ public:
         comments.clear();
         if(j.contains("comments") && j["comments"].is_array()){
             for(json &cj : j["comments"]){
+                if(!cj.is_object()) continue;
                 Comment c;
                 c.fromJson(cj);
                 comments.push_back(c);
@@ -964,12 +1004,15 @@ public:
     }
 
     void fromJson(json &j){
-        id = j.value("id", 0);
-        name = j.value("name", string(""));
-        createdAt = j.value("createdAt", string(""));
+        if(!j.is_object()) return;
+
+        id = jsonIntValue(j, "id", 0);
+        name = jsonStringValue(j, "name", "");
+        createdAt = jsonStringValue(j, "createdAt", "");
         variants.clear();
         if(j.contains("variants") && j["variants"].is_array()){
             for(json &vj : j["variants"]){
+                if(!vj.is_object()) continue;
                 Variant v;
                 v.fromJson(vj);
                 variants.push_back(v);
@@ -1051,14 +1094,16 @@ public:
     }
 
     void fromJson(json &j){
-        id = j.value("id", 0);
-        username = j.value("username", string(""));
-        createdAt = j.value("createdAt", string(""));
-        salt = j.value("salt", string(""));
-        passwordHash = j.value("passwordHash", string(""));
-        recoverySalt = j.value("recoverySalt", string(""));
-        recoveryHash = j.value("recoveryHash", string(""));
-        sessionHash = j.value("sessionHash", string(""));
+        if(!j.is_object()) return;
+
+        id = jsonIntValue(j, "id", 0);
+        username = jsonStringValue(j, "username", "");
+        createdAt = jsonStringValue(j, "createdAt", "");
+        salt = jsonStringValue(j, "salt", "");
+        passwordHash = jsonStringValue(j, "passwordHash", "");
+        recoverySalt = jsonStringValue(j, "recoverySalt", "");
+        recoveryHash = jsonStringValue(j, "recoveryHash", "");
+        sessionHash = jsonStringValue(j, "sessionHash", "");
     }
 };
 // ------------------------------------------------------------

@@ -4,12 +4,11 @@
 // ============================================================
 //  Search.h - typo-tolerant recipe matching
 //
-//  The matcher is intentionally small but effective:
 //    - exact words and simple plurals match best
 //    - prefixes match next ("chick" -> "chicken")
 //    - one or two edit-distance typos are accepted for longer words
-//    - every typed word must match somewhere
-//    - dish/title/main-ingredient matches count more than ingredients/steps
+//    - every typed word must match somewhere, so multi-word searches stay precise
+//    - dish/title/main-ingredient matches count more than ingredient/step matches
 //
 //  BackendService (HTTP) and the console menus all use this matcher.
 // ============================================================
@@ -18,19 +17,6 @@
 #include <string>
 #include <vector>
 #include "Storage.h"
-
-// ------------------------------------------------------------
-//  Searching
-//
-//  The matcher is intentionally small but typo-tolerant:
-//    - exact words and simple plurals match best
-//    - prefixes match next ("chick" -> "chicken")
-//    - one or two edit-distance typos are accepted for longer words
-//    - every typed word must match somewhere, so multi-word searches stay precise
-//    - dish/title/main-ingredient matches count more than ingredient/step matches
-//
-//  BackendService (HTTP) and the console programs all use this same matcher.
-// ------------------------------------------------------------
 
 // Common search filler. Users type "chicken recipe" or "how to make biryani";
 // those extra words should not hide the real query words.

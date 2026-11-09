@@ -32,8 +32,8 @@ test: $(BUILD_DIR)/backend_test
 	./$(BUILD_DIR)/backend_test
 
 gemini-smoke: tests/gemini_smoke.cpp src/core/AiRecipe.h src/core/Models.h third_party/json.hpp | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) tests/gemini_smoke.cpp -o /tmp/opencode/tastehub-gemini-smoke $(CURL_LIBS)
-	/tmp/opencode/tastehub-gemini-smoke
+	$(CXX) $(CXXFLAGS) $(INCLUDES) tests/gemini_smoke.cpp -o $(BUILD_DIR)/gemini_smoke $(CURL_LIBS)
+	./$(BUILD_DIR)/gemini_smoke
 
 clean:
 	rm -rf $(BUILD_DIR)

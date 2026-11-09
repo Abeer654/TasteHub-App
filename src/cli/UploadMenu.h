@@ -4,22 +4,16 @@
 // ============================================================
 //  UploadMenu.h - upload, edit and delete your own recipes
 //
-//  "Yap mode" lets the user describe the dish naturally. Gemini turns
-//  that paragraph into the same Recipe fields the step-by-step form uses.
+//  Every save follows the same pattern:
+//  ask everything -> load the newest file -> change -> save, so changes
+//  made meanwhile by another instance are never lost.
+//
+//  AI mode lets the user describe the dish naturally. Gemini turns that
+//  text into the same Recipe fields the step-by-step form uses.
 // ============================================================
 
 #include "Console.h"
 #include "core/AiRecipe.h"
-
-// ============================================================
-//  UploadMenu.h  -  upload, edit and delete YOUR OWN recipes
-//  (log in first). Pattern used for every save:
-//  ask everything -> load the newest file -> change -> save,
-//  so changes made meanwhile by other instances are never lost.
-//
-//  "Yap mode" lets the user describe the dish naturally. Gemini turns
-//  that paragraph into the same Recipe fields the step-by-step form uses.
-// ============================================================
 
 // Shows what Gemini understood before anything is saved.
 void showAiDraft(const RecipeDraft &draft){
@@ -468,7 +462,7 @@ void runUploadMenu(RecipeDatabase &db, UserDatabase &users, int userId){
         if(choice == 0) return;
         else if(choice == 1){
             cout << "\nHow do you want to add the recipe?\n";
-            cout << " 1. Describe it in your own words (AI yap mode)\n";
+            cout << " 1. Describe it in your own words (AI mode)\n";
             cout << " 2. Fill it in step by step\n";
             cout << " 0. Cancel\n";
             int how = askChoice("Choice: ", 0, 2);

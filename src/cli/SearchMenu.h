@@ -4,20 +4,12 @@
 // ============================================================
 //  SearchMenu.h - search recipes
 //
-//  Best rated recipes come first; every recipe shows its rating,
-//  likes and the latest comments. To rate / like / comment use the
-//  review menu.
+//  Best matches come first; every recipe shows its rating, likes and
+//  the latest comments. Use the review menu to rate, like or comment.
 // ============================================================
 
 #include "Console.h"
 #include "core/Search.h"
-
-// ============================================================
-//  SearchMenu.h  -  search recipes (log in first).
-//  Best rated recipes come first; every recipe shows its rating,
-//  likes and the latest comments.  To rate / like / comment use the
-//  review menu.
-// ============================================================
 
 void showResults(RecipeDatabase &db, UserDatabase &users, int userId, string keyword){
     vector<string> words = searchWords(keyword);

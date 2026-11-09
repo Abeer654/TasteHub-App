@@ -4,7 +4,7 @@
 // ============================================================
 //  AiRecipe.h - natural-language recipe extraction
 //
-//  The user can describe a dish in casual language ("yap") and this
+//  The user can describe a dish in plain language ("AI mode") and this
 //  module turns it into the structured fields the backend needs:
 //
 //      dish, title, main ingredient, ingredients, steps, cooking time
@@ -34,8 +34,8 @@
 using namespace std;
 using json = nlohmann::json;
 
-// A recipe draft is exactly the data the "yap" flow needs before the user
-// confirms it. The recipe part maps 1:1 to POST /api/recipes.
+// A recipe draft is exactly the data the AI-assisted flow needs before the
+// user confirms it. The recipe part maps 1:1 to POST /api/recipes.
 struct RecipeDraft {
     string dish;
     string title;
@@ -148,6 +148,7 @@ inline string aiModelName(){
         model = aiEnvValue("GEMINI_MODEL");
     }
     if(model.empty()) model = "gemini-3.5-flash";
+    model = aiUnquote(model);
     if(model.rfind("models/", 0) == 0) model = model.substr(7);
     return model;
 }

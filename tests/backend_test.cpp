@@ -249,7 +249,7 @@ int main(){
         check(search["results"].empty(), "empty search returns no results");
 
         // ----------------------------------------------------
-        // 2b. Natural-language recipe extraction ("yap" flow)
+        // 2b. Natural-language recipe extraction (AI draft flow)
         // ----------------------------------------------------
         json parsed = service->parseRecipeText(
             "I made chicken biryani with rice, chicken, yogurt, onions and spices. "
@@ -277,7 +277,7 @@ int main(){
         check(service->listRecipes().size() == 6,
               "parse does not save the draft automatically");
 
-        expectApiError(400, "empty yap text returns 400", [&]{
+        expectApiError(400, "empty AI description returns 400", [&]{
             service->parseRecipeText("  ");
         });
         expectApiError(502, "AI failure is translated to an API error", [&]{
@@ -547,6 +547,18 @@ int main(){
         expectApiError(400, "empty update ingredients returns 400", [&]{
             service->updateRecipe(newId, json{{"ingredients", json::array()}});
         });
+
+        // Regression test: a request that fails validation must not partially
+        // change the in-memory recipe before returning an error.
+        string titleBeforeRejectedUpdate = service->getRecipe(newId).value("title", "");
+        expectApiError(400, "invalid update does not partially apply", [&]{
+            service->updateRecipe(newId, json{
+                {"title", "Rejected Title " + suffix},
+                {"ingredients", json::array()}
+            });
+        });
+        check(service->getRecipe(newId).value("title", "") == titleBeforeRejectedUpdate,
+              "rejected update leaves the recipe unchanged in memory");
 
         expectApiError(400, "wrong cookingTime type returns 400", [&]{
             service->updateRecipe(newId, json{{"cookingTime", "long"}});

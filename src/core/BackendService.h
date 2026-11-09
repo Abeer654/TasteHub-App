@@ -143,6 +143,10 @@ public:
         string imageRef = readString(body, "imageRef", false, "");
         string youtubeUrl = readString(body, "youtubeUrl", false, "");
 
+        // Keep the previous state so a failed file save cannot leave an
+        // unsaved recipe in memory.
+        RecipeDatabase rollbackState = db;
+
         // 2. Reuse the dish when the name matches (ignoring case); otherwise
         //    create it and add the uploaded recipe as its first variant.
         int dishIndex = db.findDishIndex(dishName);
@@ -174,7 +178,7 @@ public:
         variant.setYoutubeUrl(youtubeUrl);
 
         dish.addVariant(variant);
-        saveOrThrow();
+        saveOrThrow(rollbackState);
 
         return detailJson(dish, dish.getVariants().back());
     }
@@ -188,11 +192,12 @@ public:
         RecipeRef ref = requireRecipe(id);
         Dish &dish = db.getDishes()[ref.dishIndex];
         Variant &variant = dish.getVariants()[ref.variantIndex];
-        bool changed = false;   // avoid rewriting the file when nothing changed
 
-        // Moving a recipe to another dish would change its identity, so only
-        // accept the current dish name (or no dish field at all).
+        // Validate every supplied field before changing anything. A rejected
+        // request must never leave a partially updated recipe in memory.
         if(body.contains("dish")){
+            // Moving a recipe to another dish would change its identity, so
+            // only accept the current dish name (or no dish field at all).
             string requestedDish = tidyName(readString(body, "dish", false, ""));
             if(!requestedDish.empty()
                && toLowerCase(requestedDish) != toLowerCase(dish.getName())){
@@ -200,67 +205,91 @@ public:
             }
         }
 
-        if(body.contains("title")){
-            string title = tidyName(readString(body, "title", true, ""));
+        bool hasTitle = body.contains("title");
+        string title;
+        if(hasTitle){
+            title = tidyName(readString(body, "title", true, ""));
             // Case-insensitive duplicate check, but a recipe may keep its own title.
             if(toLowerCase(title) != toLowerCase(variant.getName())
                && dish.hasVariant(title)){
                 throw ApiException(409, "A recipe with this title already exists in this dish");
             }
-            if(variant.getName() != title){
-                variant.setName(title);
-                changed = true;
-            }
         }
 
-        if(body.contains("mainIngredient")){
-            string mainIngredient = readString(body, "mainIngredient", false, "");
-            if(variant.getRecipe().getMainIngredient() != tidyName(mainIngredient)){
-                variant.getRecipe().setMainIngredient(tidyName(mainIngredient));
-                changed = true;
-            }
+        bool hasMainIngredient = body.contains("mainIngredient");
+        string mainIngredient;
+        if(hasMainIngredient){
+            mainIngredient = tidyName(readString(body, "mainIngredient", false, ""));
         }
 
-        if(body.contains("ingredients")){
-            vector<string> ingredients = readStringArray(body, "ingredients", true);
+        bool hasIngredients = body.contains("ingredients");
+        vector<string> ingredients;
+        if(hasIngredients){
+            ingredients = readStringArray(body, "ingredients", true);
+        }
+
+        bool hasSteps = body.contains("steps");
+        vector<string> steps;
+        if(hasSteps){
+            steps = readStringArray(body, "steps", true);
+        }
+
+        bool hasCookingTime = body.contains("cookingTime");
+        int cookingTime = 0;
+        if(hasCookingTime){
+            cookingTime = readInt(body, "cookingTime", true, 0);
+            if(cookingTime < 0) throw ApiException(400, "cookingTime must be 0 or more");
+        }
+
+        bool hasImageRef = body.contains("imageRef");
+        string imageRef;
+        if(hasImageRef){
+            imageRef = readString(body, "imageRef", false, "");
+        }
+
+        bool hasYoutubeUrl = body.contains("youtubeUrl");
+        string youtubeUrl;
+        if(hasYoutubeUrl){
+            youtubeUrl = readString(body, "youtubeUrl", false, "");
+        }
+
+        // Apply the validated values. Only real changes count, so an update
+        // that sends identical data does not rewrite the file.
+        RecipeDatabase rollbackState = db;
+        bool changed = false;
+
+        if(hasTitle && variant.getName() != title){
+            variant.setName(title);
+            changed = true;
+        }
+        if(hasMainIngredient && variant.getRecipe().getMainIngredient() != mainIngredient){
+            variant.getRecipe().setMainIngredient(mainIngredient);
+            changed = true;
+        }
+        if(hasIngredients && variant.getRecipe().getIngredients() != ingredients){
             variant.getRecipe().setIngredients(ingredients);
             changed = true;
         }
-
-        if(body.contains("steps")){
-            vector<string> steps = readStringArray(body, "steps", true);
+        if(hasSteps && variant.getRecipe().getSteps() != steps){
             variant.getRecipe().setSteps(steps);
             changed = true;
         }
-
-        if(body.contains("cookingTime")){
-            int cookingTime = readInt(body, "cookingTime", true, 0);
-            if(cookingTime < 0) throw ApiException(400, "cookingTime must be 0 or more");
-            if(variant.getRecipe().getCookingTime() != cookingTime){
-                variant.getRecipe().setCookingTime(cookingTime);
-                changed = true;
-            }
+        if(hasCookingTime && variant.getRecipe().getCookingTime() != cookingTime){
+            variant.getRecipe().setCookingTime(cookingTime);
+            changed = true;
         }
-
-        if(body.contains("imageRef")){
-            string imageRef = readString(body, "imageRef", false, "");
-            if(variant.getImageRef() != imageRef){
-                variant.setImageRef(imageRef);
-                changed = true;
-            }
+        if(hasImageRef && variant.getImageRef() != imageRef){
+            variant.setImageRef(imageRef);
+            changed = true;
         }
-
-        if(body.contains("youtubeUrl")){
-            string youtubeUrl = readString(body, "youtubeUrl", false, "");
-            if(variant.getYoutubeUrl() != youtubeUrl){
-                variant.setYoutubeUrl(youtubeUrl);
-                changed = true;
-            }
+        if(hasYoutubeUrl && variant.getYoutubeUrl() != youtubeUrl){
+            variant.setYoutubeUrl(youtubeUrl);
+            changed = true;
         }
 
         if(changed){
             variant.markEdited();
-            saveOrThrow();
+            saveOrThrow(rollbackState);
         }
 
         return detailJson(dish, variant);
@@ -270,9 +299,11 @@ public:
         std::lock_guard<std::mutex> lock(mutex);
 
         RecipeRef ref = requireRecipe(id);
+        RecipeDatabase rollbackState = db;
+
         // removeVariant also drops the dish when its last recipe is removed.
         db.removeVariant(ref.dishIndex, ref.variantIndex);
-        saveOrThrow();
+        saveOrThrow(rollbackState);
         return json{{"deleted", true}, {"id", id}};
     }
 
@@ -291,6 +322,7 @@ public:
         RecipeRef ref = requireRecipe(id);
         Variant &variant = db.getDishes()[ref.dishIndex].getVariants()[ref.variantIndex];
 
+        RecipeDatabase rollbackState = db;
         bool changed = false;
         if(proofImageRef.has_value()){
             string proof = trimSpaces(*proofImageRef);
@@ -300,7 +332,7 @@ public:
             changed = variant.getRatings().setRating(DEMO_USER_ID, stars);
         }
 
-        if(changed) saveOrThrow();
+        if(changed) saveOrThrow(rollbackState);
         return ratingJson(variant);
     }
 
@@ -320,7 +352,7 @@ public:
         return json{{"query", query}, {"results", results}};
     }
 
-    // POST /api/recipes/parse - turn a casual description ("yap") into a
+    // POST /api/recipes/parse - turn a natural-language description into a
     // draft recipe. It does NOT save anything: the client shows the draft,
     // the user confirms or edits it, then calls POST /api/recipes.
     json parseRecipeText(const string& text){
@@ -442,11 +474,13 @@ private:
         return ref;
     }
 
-    // Every mutation persists immediately; a failed save must not look like success.
-    void saveOrThrow(){
-        if(!db.save()){
-            throw ApiException(500, "Could not save recipes");
-        }
+    // Every mutation persists immediately. If the save fails, restore the
+    // previous in-memory state so a rejected request cannot leak into later
+    // responses or get written by the next successful save.
+    void saveOrThrow(const RecipeDatabase& rollbackState){
+        if(db.save()) return;
+        db = rollbackState;
+        throw ApiException(500, "Could not save recipes");
     }
 
     void ensureObject(const json& body){
