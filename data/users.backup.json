@@ -1,0 +1,15 @@
+{
+    "lastUserId": 1,
+    "users": [
+        {
+            "createdAt": "2026-11-07T05:53:57Z",
+            "id": 1,
+            "passwordHash": "51af6a17e17f176c76abc5fcc247c25456477550063b75724bc4c288dfe971a3",
+            "recoveryHash": "865bc1e598fa584dcf314123986eca75a7aee15ac4fa99fbfb15a4ae9b7853bd",
+            "recoverySalt": "5b8b8534d9d2085ae35a1b16958bb5cf",
+            "salt": "586ab3d6548cb12f396eac8d6cebc562",
+            "sessionHash": "",
+            "username": "junaid"
+        }
+    ]
+}

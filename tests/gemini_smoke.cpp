@@ -13,7 +13,7 @@
 // ============================================================
 
 #include <iostream>
-#include "AiRecipe.h"
+#include "core/AiRecipe.h"
 
 using namespace std;
 

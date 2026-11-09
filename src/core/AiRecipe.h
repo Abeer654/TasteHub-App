@@ -25,7 +25,7 @@
 #include <string>
 #include <vector>
 
-#include "RecipeCore.h"
+#include "Models.h"
 
 #if !defined(TASTEHUB_NO_GEMINI)
 #include <curl/curl.h>

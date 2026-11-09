@@ -8,8 +8,8 @@
 //  It uses data/backend-test instead of data/ so the real demo data is never
 //  modified. The folder is deleted when the test finishes.
 //
-//  Build:  g++ -std=c++17 -O2 -Wall -Wextra -pthread backend_test.cpp -o backend_test
-//  Run:    ./backend_test
+//  Build:  make
+//  Run:    ./build/backend_test
 // ============================================================
 
 #include <cmath>
@@ -18,7 +18,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
-#include "BackendService.h"
+#include "core/BackendService.h"
 
 using namespace std;
 
@@ -64,7 +64,7 @@ static bool containsRecipeId(const json& results, int id){
     return false;
 }
 
-// Used by the console-search check below: RecipeCore returns RecipeRefs, not JSON.
+// Used by the console-search check below: Search.h returns RecipeRefs, not JSON.
 static bool refsContainRecipeId(RecipeDatabase& db, const vector<RecipeRef>& refs, int id){
     for(const RecipeRef& ref : refs){
         if(db.getDishes()[ref.dishIndex].getVariants()[ref.variantIndex].getId() == id){
@@ -234,8 +234,8 @@ int main(){
         check(!containsRecipeId(search["results"], 6),
               "search 'chiken' does not match unrelated 'thick' steps");
 
-        // The console programs call the free searchRecipes() function in
-        // RecipeCore. It must use the same fuzzy matcher as the backend.
+        // The console menus call the free searchRecipes() function in
+        // Search.h. It must use the same fuzzy matcher as the backend.
         RecipeDatabase consoleDb(testDir);
         check(consoleDb.load(), "console search database loads");
         SearchResult consoleHits = searchRecipes(consoleDb, "chiken");

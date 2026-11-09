@@ -1,22 +1,20 @@
-#ifndef CONSOLETOOLS_H
-#define CONSOLETOOLS_H
+#ifndef CONSOLE_H
+#define CONSOLE_H
 
 // ============================================================
-//  ConsoleTools.h  -  keyboard helpers + the account screens
-//  (sign up, log in, forgot/change password, delete account).
-//  Shared by upload.cpp, search.cpp and rating.cpp, so the login
-//  works exactly the same in every program.
+//  Console.h - keyboard helpers, accounts, login and display
 //
-//    PART 1  reading from the keyboard (incl. the hidden password typing)
-//    PART 2  accounts
-//    PART 3  "stay logged in" (you log in ONCE, all programs remember it)
-//    PART 4  the first screen of every program (loginGate)
+//    Part 1  reading from the keyboard (incl. hidden password typing)
+//    Part 2  accounts (sign up, log in, forgot/change password, delete)
+//    Part 3  "stay logged in" (one login per session)
+//    Part 4  the first screen of the program (loginGate)
+//    Part 5  recipe display
 // ============================================================
 
 #include <iostream>
 #include <cstdlib>
 #include <cstdio>       // remove() deletes a file
-#include "RecipeCore.h"
+#include "core/Storage.h"
 
 // Only needed to hide the password while typing. There is one version for
 // Windows and one for Linux/Mac - your Windows laptop uses the Windows one.
@@ -30,7 +28,7 @@
 #endif
 using namespace std;
 
-const string SESSION_FILE = "session.txt";      // remembers who is logged in on this computer
+const string SESSION_FILE = "data/session.txt";      // remembers who is logged in on this computer
 
 // ============================================================
 //  PART 1: reading from the keyboard
@@ -185,7 +183,6 @@ string readPassword(string prompt){
     if(pass.size() > 0 && pass[pass.size() - 1] == '\r') pass.pop_back();
     return pass;
 }
-
 // ============================================================
 //  PART 2: accounts (sign up, log in, forgot / change password, delete account)
 // ============================================================
@@ -377,7 +374,6 @@ void changePassword(UserDatabase &users, int userId){
     if(users.save()) cout << "Password changed successfully!\n";
     else cout << "Something went wrong, password was NOT changed.\n";
 }
-
 // "Biryani > Bombay Biryani  (4.5/5 from 3 ratings)"
 string describeRecipe(RecipeDatabase &db, RecipeRef ref){
     Dish &dish = db.getDishes()[ref.dishIndex];
@@ -470,7 +466,6 @@ bool deleteAccount(RecipeDatabase &db, UserDatabase &users, int userId){
          << " recipe(s) stayed as 'Deleted user', " << finalPlan.remove.size() << " were deleted.\n";
     return true;
 }
-
 // ============================================================
 //  PART 3: "stay logged in"
 //  After a successful login we save a small file (session.txt) with the user id and a
@@ -557,6 +552,54 @@ int loginGate(UserDatabase &users){
             rememberLogin(users, userId);
             return userId;
         }
+    }
+}
+// text for a vote - in the Flutter app this decides the colour of the like/dislike buttons
+string voteText(int vote){
+    if(vote > 0) return "[LIKED]";
+    if(vote < 0) return "[DISLIKED]";
+    return "no vote";
+}
+
+// Shows the recipe, the viewer's own rating/vote, and the comments.
+// maxComments = how many of the LATEST comments to show (0 = show all)
+void showRecipePage(Dish &dish, Variant &variant, UserDatabase &users, int viewerId, int maxComments){
+    variant.show(dish.getName(), users.nameOf(variant.getOwnerId()));
+
+    int myRating = variant.getRatings().getRating(viewerId);
+    string myRatingText = "not rated yet";
+    if(myRating > 0) myRatingText = to_string(myRating) + "/5";
+    cout << "Your rating: " << myRatingText;
+    string myProof = variant.getRatings().getProofImageRef(viewerId);
+    if(!myProof.empty()) cout << "   Proof: " << myProof;
+    cout << "   Your vote: " << voteText(variant.getReactions().getVote(viewerId)) << "\n";
+
+    vector<int> visible = visibleCommentIndexes(variant, viewerId);
+    int hiddenFromViewer = (int)variant.getComments().size() - (int)visible.size();
+
+    cout << "COMMENTS (" << visible.size() << "):\n";
+
+    int first = 0;
+    if(maxComments > 0 && (int)visible.size() > maxComments){
+        first = (int)visible.size() - maxComments;
+        cout << " ... " << first << " older comment(s) not shown\n";
+    }
+
+    for(int i = first; i < (int)visible.size(); i++){
+        Comment &c = variant.getComments()[visible[i]];
+
+        cout << " " << i + 1 << ". " << users.nameOf(c.getUserId());
+        if(isOwnerOf(variant, c.getUserId())) cout << " (Owner)";
+        cout << "  " << readableDate(c.getCreatedAt());
+        if(c.isHidden()) cout << "  [HIDDEN by the owner]";
+        cout << "\n    " << c.getText() << "\n";
+        cout << "    Likes: " << c.getReactions().likes()
+             << "  Dislikes: " << c.getReactions().dislikes()
+             << "  Your vote: " << voteText(c.getReactions().getVote(viewerId)) << "\n";
+    }
+
+    if(hiddenFromViewer > 0){
+        cout << " (" << hiddenFromViewer << " comment(s) hidden by the owner)\n";
     }
 }
 

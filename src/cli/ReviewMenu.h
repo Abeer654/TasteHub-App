@@ -1,14 +1,24 @@
-#include <iostream>
-#include "ConsoleTools.h"
-using namespace std;
+#ifndef REVIEWMENU_H
+#define REVIEWMENU_H
 
 // ============================================================
-//  rating.cpp  -  find a recipe, then:
+//  ReviewMenu.h - find a recipe, then rate it (1-5), like / dislike
+//  it, write comments, like / dislike comments, delete your own
+//  comments and (recipe owner only) hide / show comments.
+//
+//  Every action: ask -> load newest files -> change -> save.
+// ============================================================
+
+#include "Console.h"
+#include "core/Search.h"
+
+// ============================================================
+//  ReviewMenu.h  -  find a recipe, then:
 //     rate it (1-5), like / dislike it, write comments,
 //     like / dislike comments, delete your own comments,
 //     and (recipe owner only) hide / show comments.
-//  You must be logged in (you log in only ONCE, the programs remember it).
-//  This program is only about recipes. Password / account things are in upload.cpp.
+//  You must be logged in; the main menu logs you in only ONCE.
+//  Password / account things live in Console.h and main.cpp.
 //  Every action: ask -> load newest files -> change -> save.
 // ============================================================
 
@@ -366,38 +376,26 @@ void findAndOpenRecipe(RecipeDatabase &db, UserDatabase &users, int userId, stri
     recipePage(db, users, userId, variantId);
 }
 
-int main(){
-    // Use the same runtime folder as the Stage 2 server.
-    RecipeDatabase db("data");
-    UserDatabase users;
+// ============================================================
+//  The review screen
+// ============================================================
 
+void runReviewMenu(RecipeDatabase &db, UserDatabase &users, int userId){
     while(true){
-        int userId = loginGate(users);          // goes straight in if you are already logged in
-        if(userId == 0) break;
+        cout << "\nSearch a recipe to rate, like or comment on (type 'back' to return): ";
+        string keyword;
+        if(!getline(cin, keyword)) return;
+        keyword = trimSpaces(keyword);
 
-        bool loggedIn = true;
-        while(loggedIn){
-            string keyword;
-            cout << "\nSearch a recipe to rate, like or comment on (type 'exit' to quit, 'logout' to log out): ";
-            if(!getline(cin, keyword)) return 0;
-            keyword = trimSpaces(keyword);
+        if(toLowerCase(keyword) == "back" || toLowerCase(keyword) == "exit") return;
 
-            if(toLowerCase(keyword) == "exit") return 0;
-
-            if(toLowerCase(keyword) == "logout"){
-                logOut(users, userId);
-                loggedIn = false;
-                continue;
-            }
-
-            if(keyword.size() == 0){
-                cout << "Please type something to search.\n";
-                continue;
-            }
-
-            findAndOpenRecipe(db, users, userId, keyword);
+        if(keyword.size() == 0){
+            cout << "Please type something to search.\n";
+            continue;
         }
-    }
 
-    return 0;
+        findAndOpenRecipe(db, users, userId, keyword);
+    }
 }
+
+#endif

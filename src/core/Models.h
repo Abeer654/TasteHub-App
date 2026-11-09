@@ -1,33 +1,29 @@
-#ifndef RECIPECORE_H
-#define RECIPECORE_H
+#ifndef MODELS_H
+#define MODELS_H
 
 // ============================================================
-//  RecipeCore.h  -  shared domain model + JSON storage
+//  Models.h - domain model + shared text/date/file/hash helpers
 //
-//  Used by upload.cpp, search.cpp, rating.cpp, backend_test.cpp and (through
-//  BackendService.h) the Stage 2 HTTP server.
+//  Part A  small helper functions (text, dates, files)
+//  Part B  password security (a "black box": you only call it)
+//  Part C  BaseEntity - the parent class (id + date)
+//  Part D  Vote, Reactions, Rating, Ratings, Comment
+//  Part E  Recipe, Variant, Dish (Variant and Dish inherit BaseEntity)
+//  Part F  User (inherits BaseEntity)
+//  Part G  access rules for recipes and comments
 //
-//  What is inside (read it from top to bottom):
-//    PART A  small helper functions (text, dates, files)
-//    PART B  password security  (a "black box": you only call it)
-//    PART C  BaseEntity   <- the parent class (id + date)
-//    PART D  Vote, Reactions, Rating, Ratings, Comment
-//    PART E  Recipe, Variant, Dish   (Variant and Dish inherit BaseEntity)
-//    PART F  User                    (inherits BaseEntity)
-//    PART G  RecipeDatabase  (reads / writes recipes.json)
-//    PART H  UserDatabase    (reads / writes users.json)
-//    PART I  showing a recipe page
-//    PART J  searching
+//  Storage.h, Search.h, AiRecipe.h and Console.h build on this file.
 // ============================================================
 
-#include <iostream>
-#include <fstream>
-#include <vector>
-#include <string>
-#include <ctime>
-#include <cstdio>
 #include <algorithm>
+#include <cctype>
+#include <cstdio>
+#include <ctime>
+#include <fstream>
+#include <iostream>
 #include <random>
+#include <string>
+#include <vector>
 #include "json.hpp"
 using namespace std;
 using json = nlohmann::json;
@@ -39,7 +35,6 @@ const int DELETED_OWNER = -1;                 // ownerId of a recipe whose owner
 const double GOOD_RECIPE_MIN_AVERAGE = 4.0;   // a recipe has a GOOD RECORD if its average rating is at least this ...
 const int GOOD_RECIPE_MIN_RATINGS = 2;        // ... from at least this many people
 const int MAX_COMMENT_LENGTH = 500;
-
 // ------------------------------------------------------------
 //  PART A: small helper functions
 // ------------------------------------------------------------
@@ -230,7 +225,6 @@ bool textHasWordStart(string text, string word){
     }
     return false;
 }
-
 // ------------------------------------------------------------
 //  PART B: PASSWORD SECURITY   (a "black box" - you do NOT need to
 //  understand what is inside, just what it does)
@@ -374,7 +368,6 @@ string normalizeRecoveryCode(string code){
     }
     return result;
 }
-
 // ------------------------------------------------------------
 //  PART C: BaseEntity - the PARENT class. Dish, Variant, Comment and User
 //  all INHERIT from it, so each of them automatically has an id and a date.
@@ -411,7 +404,6 @@ public:
         return createdAt;
     }
 };
-
 // ------------------------------------------------------------
 //  PART D: likes / dislikes, ratings and comments
 // ------------------------------------------------------------
@@ -670,7 +662,6 @@ public:
         if(j.contains("votes") && j["votes"].is_array()) reactions.fromJson(j["votes"]);
     }
 };
-
 // ------------------------------------------------------------
 //  PART E: Recipe, Variant, Dish
 // ------------------------------------------------------------
@@ -915,7 +906,6 @@ public:
         }
     }
 };
-
 // position of a comment (by its id) inside a recipe, or -1
 int findCommentIndexById(Variant &variant, int commentId){
     for(int i = 0; i < (int)variant.getComments().size(); i++){
@@ -931,7 +921,6 @@ bool isGoodRecipe(Variant &variant){
     return variant.getRatings().count() >= GOOD_RECIPE_MIN_RATINGS
         && variant.getRatings().average() >= GOOD_RECIPE_MIN_AVERAGE;
 }
-
 // Dish: e.g. "Biryani" (inherits id + date, owns many variants)
 class Dish : public BaseEntity {
 protected:
@@ -988,7 +977,6 @@ public:
         }
     }
 };
-
 // ------------------------------------------------------------
 //  PART F: User (an account). Password and recovery code are saved
 //  only as salt + hash, never as readable text.
@@ -1073,364 +1061,8 @@ public:
         sessionHash = j.value("sessionHash", string(""));
     }
 };
-
 // ------------------------------------------------------------
-//  PART G: RecipeDatabase - loads/saves everything in recipes.json
-//  The "last used id" numbers are stored INSIDE the file, so ids keep
-//  increasing (1, 2, 3...) even after the program is closed and reopened.
-//  (ids of deleted recipes / comments are never used again)
-// ------------------------------------------------------------
-
-// points to one recipe: which dish, and which variant inside that dish
-class RecipeRef {
-public:
-    int dishIndex;
-    int variantIndex;
-};
-
-RecipeRef makeRef(int dishIndex, int variantIndex){
-    RecipeRef ref;
-    ref.dishIndex = dishIndex;
-    ref.variantIndex = variantIndex;
-    return ref;
-}
-
-// what will happen to the recipes of an account that is being deleted
-class DeletionPlan {
-public:
-    vector<RecipeRef> keep;       // good record -> stays as "Deleted user"
-    vector<RecipeRef> remove;     // deleted
-};
-
-// Owns the in-memory Dish/Variant tree and serializes it to one JSON file.
-// The console programs use the default folder; BackendService passes "data".
-class RecipeDatabase {
-protected:
-    int lastDishId = 0;
-    int lastVariantId = 0;
-    int lastCommentId = 0;
-    vector<Dish> dishes;
-    string fileName = "recipes.json";
-    string backupName = "recipes.backup.json";
-
-public:
-    // The default "." keeps the old console programs working unchanged.
-    // The HTTP layer later passes a folder such as "data" or a --data-dir value.
-    explicit RecipeDatabase(string dataFolder = "."){
-        if(dataFolder.empty()) dataFolder = ".";
-        fileName = dataFolder + "/recipes.json";
-        backupName = dataFolder + "/recipes.backup.json";
-    }
-
-    // Returns false only if the file exists but is damaged/unreadable
-    bool load(){
-        dishes.clear();
-        lastDishId = 0;
-        lastVariantId = 0;
-        lastCommentId = 0;
-
-        string text = readWholeFile(fileName);
-        if(text.size() == 0) return true;               // no file yet (or empty file) = empty database
-
-        // "false" = do not crash on a damaged file, give a "discarded" marker instead
-        json j = json::parse(text, nullptr, false);
-        if(j.is_discarded() || !j.contains("dishes") || !j["dishes"].is_array()){
-            cout << "ERROR: could not read " << fileName << " (the file is damaged)\n";
-            return false;
-        }
-
-        lastDishId = j.value("lastDishId", 0);
-        lastVariantId = j.value("lastVariantId", 0);
-        lastCommentId = j.value("lastCommentId", 0);
-
-        for(json &dj : j["dishes"]){
-            Dish d;
-            d.fromJson(dj);
-            dishes.push_back(d);
-        }
-
-        // safety: if the counters in the file are behind (e.g. file edited by hand),
-        // move them ahead of the biggest id that really exists, so ids never repeat
-        for(Dish &d : dishes){
-            if(d.getId() > lastDishId) lastDishId = d.getId();
-            for(Variant &v : d.getVariants()){
-                if(v.getId() > lastVariantId) lastVariantId = v.getId();
-                for(Comment &c : v.getComments()){
-                    if(c.getId() > lastCommentId) lastCommentId = c.getId();
-                }
-            }
-        }
-
-        return true;
-    }
-
-    bool save(){
-        json j;
-        j["lastDishId"] = lastDishId;
-        j["lastVariantId"] = lastVariantId;
-        j["lastCommentId"] = lastCommentId;
-        j["dishes"] = json::array();
-        for(Dish &d : dishes){
-            // Call through the base class on purpose. This is the runtime
-            // polymorphism demonstration: BaseEntity::toJson() dispatches to
-            // Dish::toJson(), and each Dish serializes its own Variants.
-            BaseEntity &entity = d;
-            j["dishes"].push_back(entity.toJson());
-        }
-
-        string text = jsonToText(j);      // make the text FIRST, so a problem can never empty the file
-        makeBackupOf(fileName, backupName);
-
-        // Atomic save: write the complete new file to a temporary name, then
-        // rename it over the real file. If the process dies mid-write, the old
-        // recipes.json stays intact.
-        string tempName = fileName + ".tmp";
-        {
-            ofstream outFile(tempName);
-            if(!outFile){
-                cout << "ERROR: could not write to " << tempName << "\n";
-                return false;
-            }
-            outFile << text;
-            outFile.flush();
-            if(!outFile){
-                cout << "ERROR: could not write to " << tempName << "\n";
-                return false;
-            }
-        }
-
-        if(std::rename(tempName.c_str(), fileName.c_str()) != 0){
-            cout << "ERROR: could not replace " << fileName << "\n";
-            return false;
-        }
-        return true;
-    }
-
-    // Ids are monotonic and never reused, even after a recipe is deleted.
-    int nextDishId(){
-        lastDishId++;
-        return lastDishId;
-    }
-
-    int nextVariantId(){
-        lastVariantId++;
-        return lastVariantId;
-    }
-
-    int nextCommentId(){
-        lastCommentId++;
-        return lastCommentId;
-    }
-
-    // position of the dish in the list, or -1 if not found
-    int findDishIndex(string dishName){
-        for(int i = 0; i < (int)dishes.size(); i++){
-            if(toLowerCase(dishes[i].getName()) == toLowerCase(dishName)) return i;
-        }
-        return -1;
-    }
-
-    // adds a dish and returns its position in the list
-    int addDish(Dish d){
-        dishes.push_back(d);
-        return (int)dishes.size() - 1;
-    }
-
-    vector<Dish>& getDishes(){
-        return dishes;
-    }
-
-    // finds a recipe by its id; dishIndex = -1 if it does not exist (any more)
-    RecipeRef findVariantById(int variantId){
-        for(int d = 0; d < (int)dishes.size(); d++){
-            vector<Variant> &vars = dishes[d].getVariants();
-            for(int v = 0; v < (int)vars.size(); v++){
-                if(vars[v].getId() == variantId) return makeRef(d, v);
-            }
-        }
-        return makeRef(-1, -1);
-    }
-
-    // all recipes uploaded by one user
-    vector<RecipeRef> findByOwner(int ownerId){
-        vector<RecipeRef> result;
-        for(int d = 0; d < (int)dishes.size(); d++){
-            vector<Variant> &vars = dishes[d].getVariants();
-            for(int v = 0; v < (int)vars.size(); v++){
-                if(vars[v].getOwnerId() == ownerId){
-                    result.push_back(makeRef(d, v));
-                }
-            }
-        }
-        return result;
-    }
-
-    // deletes one recipe; if its dish has no recipes left, the empty dish is removed too
-    void removeVariant(int dishIndex, int variantIndex){
-        vector<Variant> &vars = dishes[dishIndex].getVariants();
-        vars.erase(vars.begin() + variantIndex);
-        if(vars.size() == 0){
-            dishes.erase(dishes.begin() + dishIndex);
-        }
-    }
-
-    // which recipes of this user would stay and which would be deleted
-    DeletionPlan planAccountDeletion(int userId){
-        DeletionPlan plan;
-        vector<RecipeRef> mine = findByOwner(userId);
-        for(RecipeRef &ref : mine){
-            Variant &v = dishes[ref.dishIndex].getVariants()[ref.variantIndex];
-            if(isGoodRecipe(v)) plan.keep.push_back(ref);
-            else plan.remove.push_back(ref);
-        }
-        return plan;
-    }
-
-    // removes every rating, vote and comment that this user ever made
-    void removeUserActivity(int userId){
-        for(Dish &d : dishes){
-            for(Variant &v : d.getVariants()){
-                v.getRatings().removeUser(userId);
-                v.getReactions().removeUser(userId);
-
-                vector<Comment> &list = v.getComments();
-                for(int i = (int)list.size() - 1; i >= 0; i--){
-                    if(list[i].getUserId() == userId){
-                        list.erase(list.begin() + i);
-                    }
-                }
-                for(Comment &c : list){
-                    c.getReactions().removeUser(userId);
-                }
-            }
-        }
-    }
-
-    // Everything for deleting an account: the user's comments, ratings and likes go;
-    // recipes with a GOOD RECORD stay (owner becomes "Deleted user"), the others are deleted.
-    void deleteAccountData(int userId){
-        removeUserActivity(userId);
-
-        for(int d = (int)dishes.size() - 1; d >= 0; d--){
-            vector<Variant> &vars = dishes[d].getVariants();
-            for(int v = (int)vars.size() - 1; v >= 0; v--){
-                if(vars[v].getOwnerId() != userId) continue;
-
-                if(isGoodRecipe(vars[v])) vars[v].setOwnerId(DELETED_OWNER);
-                else vars.erase(vars.begin() + v);
-            }
-            if(vars.size() == 0){
-                dishes.erase(dishes.begin() + d);
-            }
-        }
-    }
-};
-
-// ------------------------------------------------------------
-//  PART H: UserDatabase - loads/saves all accounts in users.json
-// ------------------------------------------------------------
-class UserDatabase {
-protected:
-    int lastUserId = 0;
-    vector<User> users;
-    string fileName = "users.json";
-    string backupName = "users.backup.json";
-
-public:
-    bool load(){
-        users.clear();
-        lastUserId = 0;
-
-        string text = readWholeFile(fileName);
-        if(text.size() == 0) return true;               // no file yet (or empty file) = no users
-
-        json j = json::parse(text, nullptr, false);
-        if(j.is_discarded() || !j.contains("users") || !j["users"].is_array()){
-            cout << "ERROR: could not read " << fileName << " (the file is damaged)\n";
-            return false;
-        }
-
-        lastUserId = j.value("lastUserId", 0);
-
-        for(json &uj : j["users"]){
-            User u;
-            u.fromJson(uj);
-            users.push_back(u);
-        }
-
-        for(User &u : users){
-            if(u.getId() > lastUserId) lastUserId = u.getId();
-        }
-
-        return true;
-    }
-
-    bool save(){
-        json j;
-        j["lastUserId"] = lastUserId;
-        j["users"] = json::array();
-        for(User &u : users){
-            j["users"].push_back(u.toJson());
-        }
-
-        string text = jsonToText(j);
-        makeBackupOf(fileName, backupName);
-
-        ofstream outFile(fileName);
-        if(!outFile){
-            cout << "ERROR: could not write to " << fileName << "\n";
-            return false;
-        }
-        outFile << text;
-        outFile.close();
-        return !outFile.fail();
-    }
-
-    int nextUserId(){
-        lastUserId++;
-        return lastUserId;
-    }
-
-    // position in the list, or -1. Capital/small letters don't matter: "Abeer" = "abeer"
-    int findIndexByUsername(string username){
-        for(int i = 0; i < (int)users.size(); i++){
-            if(toLowerCase(users[i].getUsername()) == toLowerCase(username)) return i;
-        }
-        return -1;
-    }
-
-    int findIndexById(int id){
-        for(int i = 0; i < (int)users.size(); i++){
-            if(users[i].getId() == id) return i;
-        }
-        return -1;
-    }
-
-    int addUser(User u){
-        users.push_back(u);
-        return (int)users.size() - 1;
-    }
-
-    void removeUser(int index){
-        users.erase(users.begin() + index);
-    }
-
-    vector<User>& getUsers(){
-        return users;
-    }
-
-    // username for an id. "Deleted user" for recipes that stayed after their
-    // account was deleted, "unknown" for old recipes that have no owner.
-    string nameOf(int id){
-        if(id == DELETED_OWNER) return "Deleted user";
-        int index = findIndexById(id);
-        if(index == -1) return "unknown";
-        return users[index].getUsername();
-    }
-};
-
-// ------------------------------------------------------------
-//  PART I: showing a recipe page (rating, likes, comments)
+//  PART G: access rules for recipes and comments
 // ------------------------------------------------------------
 
 bool isOwnerOf(Variant &variant, int userId){
@@ -1442,359 +1074,11 @@ bool canSeeComment(Variant &variant, Comment &comment, int viewerId){
     if(!comment.isHidden()) return true;
     return isOwnerOf(variant, viewerId) || comment.getUserId() == viewerId;
 }
-
 // positions of the comments this viewer is allowed to see
 vector<int> visibleCommentIndexes(Variant &variant, int viewerId){
     vector<int> result;
     for(int i = 0; i < (int)variant.getComments().size(); i++){
         if(canSeeComment(variant, variant.getComments()[i], viewerId)) result.push_back(i);
-    }
-    return result;
-}
-
-// text for a vote - in the Flutter app this decides the colour of the like/dislike buttons
-string voteText(int vote){
-    if(vote > 0) return "[LIKED]";
-    if(vote < 0) return "[DISLIKED]";
-    return "no vote";
-}
-
-// Shows the recipe, the viewer's own rating/vote, and the comments.
-// maxComments = how many of the LATEST comments to show (0 = show all)
-void showRecipePage(Dish &dish, Variant &variant, UserDatabase &users, int viewerId, int maxComments){
-    variant.show(dish.getName(), users.nameOf(variant.getOwnerId()));
-
-    int myRating = variant.getRatings().getRating(viewerId);
-    string myRatingText = "not rated yet";
-    if(myRating > 0) myRatingText = to_string(myRating) + "/5";
-    cout << "Your rating: " << myRatingText;
-    string myProof = variant.getRatings().getProofImageRef(viewerId);
-    if(!myProof.empty()) cout << "   Proof: " << myProof;
-    cout << "   Your vote: " << voteText(variant.getReactions().getVote(viewerId)) << "\n";
-
-    vector<int> visible = visibleCommentIndexes(variant, viewerId);
-    int hiddenFromViewer = (int)variant.getComments().size() - (int)visible.size();
-
-    cout << "COMMENTS (" << visible.size() << "):\n";
-
-    int first = 0;
-    if(maxComments > 0 && (int)visible.size() > maxComments){
-        first = (int)visible.size() - maxComments;
-        cout << " ... " << first << " older comment(s) not shown\n";
-    }
-
-    for(int i = first; i < (int)visible.size(); i++){
-        Comment &c = variant.getComments()[visible[i]];
-
-        cout << " " << i + 1 << ". " << users.nameOf(c.getUserId());
-        if(isOwnerOf(variant, c.getUserId())) cout << " (Owner)";
-        cout << "  " << readableDate(c.getCreatedAt());
-        if(c.isHidden()) cout << "  [HIDDEN by the owner]";
-        cout << "\n    " << c.getText() << "\n";
-        cout << "    Likes: " << c.getReactions().likes()
-             << "  Dislikes: " << c.getReactions().dislikes()
-             << "  Your vote: " << voteText(c.getReactions().getVote(viewerId)) << "\n";
-    }
-
-    if(hiddenFromViewer > 0){
-        cout << " (" << hiddenFromViewer << " comment(s) hidden by the owner)\n";
-    }
-}
-
-// ------------------------------------------------------------
-//  PART J: searching
-//
-//  The matcher is intentionally small but typo-tolerant:
-//    - exact words and simple plurals match best
-//    - prefixes match next ("chick" -> "chicken")
-//    - one or two edit-distance typos are accepted for longer words
-//    - every typed word must match somewhere, so multi-word searches stay precise
-//    - dish/title/main-ingredient matches count more than ingredient/step matches
-//
-//  BackendService (HTTP) and the console programs all use this same matcher.
-// ------------------------------------------------------------
-
-// Common search filler. Users type "chicken recipe" or "how to make biryani";
-// those extra words should not hide the real query words.
-vector<string> removeStopWords(vector<string> words){
-    static const vector<string> stopWords = {
-        "a", "an", "and", "are", "best", "cook", "cooked", "cooking",
-        "dish", "dishes", "easy", "find", "food", "for", "give", "homemade",
-        "how", "i", "is", "make", "making", "me", "my", "of", "or",
-        "please", "recipe", "recipes", "search", "show", "simple", "some",
-        "style", "the", "to", "want", "what", "which", "with"
-    };
-
-    vector<string> result;
-    for(const string &word : words){
-        bool isStopWord = false;
-        for(const string &stopWord : stopWords){
-            if(word == stopWord){
-                isStopWord = true;
-                break;
-            }
-        }
-        if(!isStopWord) result.push_back(word);
-    }
-    return result;
-}
-
-// The words that really count in what the user typed.
-vector<string> searchWords(string keyword){
-    return removeStopWords(splitWords(keyword));
-}
-
-// Small English plural normalizer for food searches:
-// fries -> fry, tomatoes -> tomato, onions -> onion, dishes -> dish.
-// It is deliberately simple; the edit-distance matcher handles real typos.
-string stemWord(string word){
-    word = toLowerCase(word);
-
-    if(word.size() > 4 && word.compare(word.size() - 3, 3, "ies") == 0){
-        return word.substr(0, word.size() - 3) + "y";
-    }
-    if(word.size() > 4 && word.compare(word.size() - 3, 3, "oes") == 0){
-        return word.substr(0, word.size() - 2);
-    }
-    if(word.size() > 4 && word.compare(word.size() - 2, 2, "es") == 0){
-        char before = word[word.size() - 3];
-        bool needsFullEs = before == 's' || before == 'x' || before == 'z'
-                        || word.substr(word.size() - 4, 2) == "ch"
-                        || word.substr(word.size() - 4, 2) == "sh";
-        if(needsFullEs) return word.substr(0, word.size() - 2);
-        return word.substr(0, word.size() - 1);
-    }
-    if(word.size() > 3 && word.back() == 's' && word[word.size() - 2] != 's'){
-        return word.substr(0, word.size() - 1);
-    }
-    return word;
-}
-
-// Damerau-Levenshtein distance (optimal string alignment).
-// Unlike plain Levenshtein, swapping two neighbouring letters costs 1, so
-// "briyani" is one typo away from "biryani", not two.
-int damerauLevenshtein(const string &a, const string &b){
-    int n = (int)a.size();
-    int m = (int)b.size();
-    vector<vector<int>> distance(n + 1, vector<int>(m + 1, 0));
-
-    for(int i = 0; i <= n; i++) distance[i][0] = i;
-    for(int j = 0; j <= m; j++) distance[0][j] = j;
-
-    for(int i = 1; i <= n; i++){
-        for(int j = 1; j <= m; j++){
-            int cost = (a[i - 1] == b[j - 1]) ? 0 : 1;
-            distance[i][j] = min({distance[i - 1][j] + 1,
-                                  distance[i][j - 1] + 1,
-                                  distance[i - 1][j - 1] + cost});
-
-            if(i > 1 && j > 1
-               && a[i - 1] == b[j - 2]
-               && a[i - 2] == b[j - 1]){
-                distance[i][j] = min(distance[i][j], distance[i - 2][j - 2] + 1);
-            }
-        }
-    }
-    return distance[n][m];
-}
-
-// Scores ONE query word against ONE word from the recipe.
-// "strict" is used for cooking steps: steps are long prose, so loose fuzzy
-// matches there create noise ("fries" matching every recipe that says "fry").
-int wordMatchScore(const string &query, const string &word, bool strict){
-    if(query.empty() || word.empty()) return 0;
-
-    if(query == word) return 100;
-
-    // Plural / singular forms: onions vs onion, fries vs fry, tomatoes vs tomato.
-    if(stemWord(query) == stemWord(word)){
-        if(!strict || (query.size() >= 4 && word.size() >= 4)) return 95;
-    }
-
-    // Prefixes need at least two letters. One letter is too broad.
-    if(query.size() >= 2 && word.rfind(query, 0) == 0){
-        if(!strict || word.size() >= 4) return 85;
-    }
-    if(query.size() >= 2 && query.rfind(word, 0) == 0 && word.size() >= 3){
-        if(!strict || (query.size() >= 4 && word.size() >= 4)) return 75;
-    }
-
-    // Fuzzy matching needs words long enough to be meaningful.
-    if(query.size() < 3 || word.size() < 3) return 0;
-
-    // A word inside another word is not a typo: "oil" should not match "boil".
-    if(word.find(query) != string::npos || query.find(word) != string::npos){
-        return 0;
-    }
-
-    int distance = damerauLevenshtein(query, word);
-    if(distance == 1){
-        // Steps are long prose. A one-letter typo is fine there only when both
-        // words are meaningful length and start with the same letter, so
-        // "fries" cannot drift into the common step word "fry".
-        if(strict && (query.size() < 4 || word.size() < 4 || query[0] != word[0])){
-            return 0;
-        }
-        return 60;
-    }
-
-    if(distance == 2 && !strict){
-        int longest = max((int)query.size(), (int)word.size());
-        double similarity = 1.0 - (double)distance / (double)longest;
-        bool sameStart = query[0] == word[0];
-
-        // Accept two edits only when the words still clearly look related.
-        // This keeps "chikn" -> "chicken" and "frys" -> "fries", but rejects
-        // "tomato" -> "potato" and "chiken" -> "thick".
-        if(sameStart && (longest <= 5 || similarity >= 0.65)) return 40;
-    }
-
-    return 0;
-}
-
-// Best score of one query word against any word in a piece of text.
-int textMatchScore(const string &query, const string &text, bool strict){
-    int best = 0;
-    for(const string &word : splitWords(text)){
-        best = max(best, wordMatchScore(query, word, strict));
-        if(best == 100) break;
-    }
-    return best;
-}
-
-// Small bonus when a multi-word query matches a whole title/dish name.
-// This makes "chiken biryani" rank Chicken Biryani above recipes that only
-// happen to contain both words in separate places.
-int phraseMatchBonus(const string &queryPhrase, const string &text){
-    string target = toLowerCase(tidyName(text));
-    if(target.empty()) return 0;
-
-    if(target.find(queryPhrase) != string::npos) return 150;
-
-    int longest = max((int)queryPhrase.size(), (int)target.size());
-    if(longest == 0) return 0;
-
-    int distance = damerauLevenshtein(queryPhrase, target);
-    double similarity = 1.0 - (double)distance / (double)longest;
-    if(similarity >= 0.75) return 100;
-    return 0;
-}
-
-// One ranked result. "primary" means the match was in the recipe title, dish
-// name or main ingredient (the console prints those as "Best matches").
-class RecipeSearchHit {
-public:
-    RecipeRef ref;
-    int score = 0;
-    bool primary = false;
-    double averageRating = 0;
-    int ratingCount = 0;
-    int id = 0;
-};
-
-// Returns false when any query word is missing from the recipe.
-bool scoreRecipeSearch(RecipeRef ref, Dish &dish, Variant &variant,
-                       const vector<string> &words, const string &phrase,
-                       RecipeSearchHit &hit){
-    Recipe &recipe = variant.getRecipe();
-    int total = 0;
-    bool primary = false;
-
-    for(const string &word : words){
-        int best = 0;
-        bool matchedPrimary = false;
-
-        int score = textMatchScore(word, variant.getName(), false);
-        if(score > 0){ best = max(best, score * 3); matchedPrimary = true; }
-
-        score = textMatchScore(word, dish.getName(), false);
-        if(score > 0){ best = max(best, score * 2); matchedPrimary = true; }
-
-        score = textMatchScore(word, recipe.getMainIngredient(), false);
-        if(score > 0){ best = max(best, score * 2); matchedPrimary = true; }
-
-        for(const string &ingredient : recipe.getIngredients()){
-            score = textMatchScore(word, ingredient, false);
-            if(score > 0) best = max(best, score);
-        }
-        for(const string &step : recipe.getSteps()){
-            score = textMatchScore(word, step, true);
-            if(score > 0) best = max(best, score);
-        }
-
-        // AND search: every word must appear somewhere, otherwise the recipe
-        // is not a match for this query.
-        if(best == 0) return false;
-
-        total += best;
-        if(matchedPrimary) primary = true;
-    }
-
-    if(words.size() > 1){
-        total += phraseMatchBonus(phrase, variant.getName());
-        total += phraseMatchBonus(phrase, dish.getName()) / 2;
-    }
-
-    hit.ref = ref;
-    hit.score = total;
-    hit.primary = primary;
-    hit.averageRating = variant.getRatings().average();
-    hit.ratingCount = variant.getRatings().count();
-    hit.id = variant.getId();
-    return true;
-}
-
-// Higher text score first; ties go to the better-rated recipe, then the
-// smaller id so output is stable.
-bool betterSearchHit(const RecipeSearchHit &a, const RecipeSearchHit &b){
-    if(a.score != b.score) return a.score > b.score;
-    if(a.averageRating != b.averageRating) return a.averageRating > b.averageRating;
-    if(a.ratingCount != b.ratingCount) return a.ratingCount > b.ratingCount;
-    return a.id < b.id;
-}
-
-// The shared search entry point. BackendService turns these hits into JSON;
-// the console programs turn them into recipe pages.
-vector<RecipeSearchHit> findRecipeMatches(RecipeDatabase &db, const string &keyword){
-    vector<RecipeSearchHit> hits;
-
-    vector<string> words = searchWords(keyword);
-    if(words.empty()) return hits;
-
-    string phrase;
-    for(int i = 0; i < (int)words.size(); i++){
-        if(i > 0) phrase += " ";
-        phrase += words[i];
-    }
-
-    for(int d = 0; d < (int)db.getDishes().size(); d++){
-        Dish &dish = db.getDishes()[d];
-        for(int v = 0; v < (int)dish.getVariants().size(); v++){
-            Variant &variant = dish.getVariants()[v];
-            RecipeSearchHit hit;
-            if(scoreRecipeSearch(makeRef(d, v), dish, variant, words, phrase, hit)){
-                hits.push_back(hit);
-            }
-        }
-    }
-
-    sort(hits.begin(), hits.end(), betterSearchHit);
-    return hits;
-}
-
-class SearchResult {
-public:
-    vector<RecipeRef> best;
-    vector<RecipeRef> others;
-};
-
-// Console-friendly wrapper: same matcher, split into "best" (title/dish/main
-// ingredient match) and "others" (ingredient or step match).
-SearchResult searchRecipes(RecipeDatabase &db, string keyword){
-    SearchResult result;
-    for(RecipeSearchHit &hit : findRecipeMatches(db, keyword)){
-        if(hit.primary) result.best.push_back(hit.ref);
-        else result.others.push_back(hit.ref);
     }
     return result;
 }

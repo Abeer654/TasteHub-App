@@ -14,7 +14,7 @@
 //      That keeps a response safe after the lock is released.
 //    - Every mutation saves immediately. Saves are atomic inside
 //      RecipeDatabase::save() (temp file + rename).
-//    - Search is implemented in the shared RecipeCore matcher, using exact,
+//    - Search is implemented in the shared Search.h matcher, using exact,
 //      plural, prefix and Damerau-Levenshtein scoring for typo tolerance.
 //      The HTTP layer only formats the ranked results as JSON.
 // ============================================================
@@ -25,7 +25,7 @@
 #include <optional>
 #include <stdexcept>
 #include "AiRecipe.h"
-#include "RecipeCore.h"
+#include "Search.h"
 
 // Carries the HTTP status code that Stage 2 should send to the client.
 // Keeping the status attached to the error means the future server does not
@@ -309,7 +309,7 @@ public:
     json searchRecipes(const string& query){
         std::lock_guard<std::mutex> lock(mutex);
 
-        // findRecipeMatches() lives in RecipeCore so the console programs and
+        // findRecipeMatches() lives in Search.h so the console programs and
         // the future HTTP server all share exactly the same ranking rules.
         json results = json::array();
         for(RecipeSearchHit &hit : findRecipeMatches(db, query)){

@@ -1,13 +1,21 @@
-#include <iostream>
-#include "AiRecipe.h"
-#include "ConsoleTools.h"
-using namespace std;
+#ifndef UPLOADMENU_H
+#define UPLOADMENU_H
 
 // ============================================================
-//  upload.cpp  -  upload, edit and delete YOUR OWN recipes
+//  UploadMenu.h - upload, edit and delete your own recipes
+//
+//  "Yap mode" lets the user describe the dish naturally. Gemini turns
+//  that paragraph into the same Recipe fields the step-by-step form uses.
+// ============================================================
+
+#include "Console.h"
+#include "core/AiRecipe.h"
+
+// ============================================================
+//  UploadMenu.h  -  upload, edit and delete YOUR OWN recipes
 //  (log in first). Pattern used for every save:
 //  ask everything -> load the newest file -> change -> save,
-//  so changes made meanwhile by other programs are never lost.
+//  so changes made meanwhile by other instances are never lost.
 //
 //  "Yap mode" lets the user describe the dish naturally. Gemini turns
 //  that paragraph into the same Recipe fields the step-by-step form uses.
@@ -442,56 +450,35 @@ void deleteRecipe(RecipeDatabase &db, int userId, string username){
     else cout << "Something went wrong, the recipe was NOT deleted.\n";
 }
 
-int main(){
-    // Use the same runtime folder as the Stage 2 server.
-    RecipeDatabase db("data");
-    UserDatabase users;
+// ============================================================
+//  The upload / edit / delete screen
+// ============================================================
+
+void runUploadMenu(RecipeDatabase &db, UserDatabase &users, int userId){
+    string username = users.nameOf(userId);
 
     while(true){
-        int userId = loginGate(users);          // nobody gets in without an account
-        if(userId == 0) break;
+        cout << "\n===== Recipes =====\n";
+        cout << " 1. Upload a new recipe (describe it or fill a form)\n";
+        cout << " 2. Edit my recipe\n";
+        cout << " 3. Delete my recipe\n";
+        cout << " 0. Back to main menu\n";
+        int choice = askChoice("Choice: ", 0, 3);
 
-        string username = users.nameOf(userId);
-        bool loggedIn = true;
+        if(choice == 0) return;
+        else if(choice == 1){
+            cout << "\nHow do you want to add the recipe?\n";
+            cout << " 1. Describe it in your own words (AI yap mode)\n";
+            cout << " 2. Fill it in step by step\n";
+            cout << " 0. Cancel\n";
+            int how = askChoice("Choice: ", 0, 2);
 
-        while(loggedIn){
-            cout << "\n===== Logged in as: " << username << " =====\n";
-            cout << " 1. Upload a new recipe (describe it or fill a form)\n";
-            cout << " 2. Edit my recipe\n";
-            cout << " 3. Delete my recipe\n";
-            cout << " 4. Change password\n";
-            cout << " 5. Delete my account\n";
-            cout << " 6. Log out\n";
-            cout << " 0. Exit\n";
-            int choice = askChoice("Choice: ", 0, 6);
-
-            if(choice == 0){
-                cout << "Bye!\n";
-                return 0;
-            }
-            else if(choice == 1){
-                cout << "\nHow do you want to add the recipe?\n";
-                cout << " 1. Describe it in your own words (AI yap mode)\n";
-                cout << " 2. Fill it in step by step\n";
-                cout << " 0. Cancel\n";
-                int how = askChoice("Choice: ", 0, 2);
-
-                if(how == 1) uploadRecipeFromText(db, userId, username);
-                else if(how == 2) uploadRecipe(db, userId, username);
-            }
-            else if(choice == 2) editRecipe(db, userId, username);
-            else if(choice == 3) deleteRecipe(db, userId, username);
-            else if(choice == 4) changePassword(users, userId);
-            else if(choice == 5){
-                if(deleteAccount(db, users, userId)) loggedIn = false;
-            }
-            else if(choice == 6){
-                logOut(users, userId);
-                loggedIn = false;
-            }
+            if(how == 1) uploadRecipeFromText(db, userId, username);
+            else if(how == 2) uploadRecipe(db, userId, username);
         }
+        else if(choice == 2) editRecipe(db, userId, username);
+        else if(choice == 3) deleteRecipe(db, userId, username);
     }
-
-    cout << "Bye!\n";
-    return 0;
 }
+
+#endif

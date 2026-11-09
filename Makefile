@@ -7,29 +7,34 @@
 CXX ?= g++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -pthread
 CURL_LIBS ?= -lcurl
+INCLUDES := -Isrc -Ithird_party
+BUILD_DIR := build
 
 .PHONY: all test gemini-smoke clean
 
-all: backend_test upload search rating
+CORE_HEADERS := src/core/Models.h src/core/Storage.h src/core/Search.h \
+                src/core/AiRecipe.h src/core/BackendService.h
+CLI_HEADERS := src/cli/Console.h src/cli/UploadMenu.h \
+               src/cli/SearchMenu.h src/cli/ReviewMenu.h
 
-backend_test: backend_test.cpp BackendService.h AiRecipe.h RecipeCore.h json.hpp
-	$(CXX) $(CXXFLAGS) backend_test.cpp -o $@ $(CURL_LIBS)
+all: $(BUILD_DIR)/tastehub $(BUILD_DIR)/backend_test
 
-upload: upload.cpp ConsoleTools.h AiRecipe.h RecipeCore.h json.hpp
-	$(CXX) $(CXXFLAGS) upload.cpp -o $@ $(CURL_LIBS)
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
 
-search: search.cpp ConsoleTools.h RecipeCore.h json.hpp
-	$(CXX) $(CXXFLAGS) search.cpp -o $@
+$(BUILD_DIR)/tastehub: src/main.cpp $(CLI_HEADERS) $(CORE_HEADERS) third_party/json.hpp | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) src/main.cpp -o $@ $(CURL_LIBS)
 
-rating: rating.cpp ConsoleTools.h RecipeCore.h json.hpp
-	$(CXX) $(CXXFLAGS) rating.cpp -o $@
+$(BUILD_DIR)/backend_test: tests/backend_test.cpp $(CORE_HEADERS) third_party/json.hpp | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) tests/backend_test.cpp -o $@ $(CURL_LIBS)
 
-test: backend_test
-	./backend_test
+test: $(BUILD_DIR)/backend_test
+	./$(BUILD_DIR)/backend_test
 
-gemini-smoke: tests/gemini_smoke.cpp AiRecipe.h RecipeCore.h json.hpp
-	$(CXX) $(CXXFLAGS) -I. tests/gemini_smoke.cpp -o /tmp/opencode/tastehub-gemini-smoke $(CURL_LIBS)
+gemini-smoke: tests/gemini_smoke.cpp src/core/AiRecipe.h src/core/Models.h third_party/json.hpp | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) tests/gemini_smoke.cpp -o /tmp/opencode/tastehub-gemini-smoke $(CURL_LIBS)
 	/tmp/opencode/tastehub-gemini-smoke
 
 clean:
-	rm -f backend_test upload search rating
+	rm -rf $(BUILD_DIR)
+	rm -f tastehub backend_test upload search rating
