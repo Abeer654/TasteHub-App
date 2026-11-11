@@ -9,6 +9,10 @@ Do not change field names without updating both sides.
 http://<laptop-tailscale-ip>:8080
 ```
 
+Opening the base URL in a browser serves a small demo page that uses the JSON
+endpoints below. It is a convenience for demos, not part of the mobile API
+contract.
+
 All requests and responses use JSON:
 
 ```text
@@ -36,6 +40,9 @@ Every error has the same shape:
 | `500` | Server or file error |
 | `502` | Gemini request failed |
 | `503` | Gemini is not configured, rate-limited, or busy |
+
+Request bodies must be valid JSON objects. Malformed JSON, wrong field types and
+non-positive recipe ids return `400`. Unknown API routes return a JSON `404`.
 
 ## Endpoints
 
@@ -201,6 +208,24 @@ GEMINI_MODEL=gemini-3.5-flash
 Put these in `.env` (git-ignored) or the server environment. `.env.example`
 shows the names. The backend also tries a small fallback list of Gemini models.
 
+## Delete
+
+```text
+DELETE /api/recipes/:id
+```
+
+Response:
+
+```json
+{
+  "deleted": true,
+  "id": 5
+}
+```
+
+Deleting the last recipe in a dish also removes the now-empty dish. Deleting an
+unknown recipe returns `404`.
+
 ## Rating
 
 Request:
@@ -244,6 +269,9 @@ Search is case-insensitive and typo-tolerant. It looks at dish names, recipe
 titles, main ingredients, ingredients and steps. Common filler words such as
 `recipe`, `dish`, `how`, `to` and `make` are ignored, so `how to make biryani`
 and `biryani recipe` both work. Every remaining query word must match somewhere.
+
+A missing or blank `q` is treated as "no search yet" and returns `200` with an
+empty `results` array.
 
 Response:
 
