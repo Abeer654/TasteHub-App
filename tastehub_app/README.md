@@ -10,16 +10,28 @@ The Android/Linux client for the TasteHub C++ server. It uses the JSON API in
 - Home screen grouped by dish, with **All dishes** and **My recipes** filters
 - Recipes ranked **inside each dish**: average rating, rating count, newest
   first; unrated recipes are marked **New** and the best rated is **Top pick**
-- Recipe detail with ingredients, steps, per-user ratings, proof photos and
+- Recipe detail with ingredients, steps, per-user ratings, rating photos and
   YouTube links
 - Add and edit recipes, including AI drafts you review before saving
 - Photo upload from the device gallery/file picker, or an image URL
 - Owner-only edit and delete; any logged-in user can rate
+- Unsaved-changes guard and a sticky save bar on the recipe form
 - System / Light / Dark theme, persisted with `shared_preferences`
 - Typo-tolerant search, grouped by dish
 
 Seed recipes have no photo on purpose; the app shows a warm gradient
 placeholder until a user uploads one or adds a URL.
+
+### Recipe photo vs rating photo
+
+These are deliberately separate and should stay that way:
+
+| | Recipe photo | Rating photo |
+|---|---|---|
+| Field | `imageRef` | `proofImageRef` / `myRatingProofImageRef` |
+| Where | dish card and detail hero | your rating card and other ratings |
+| Edited with | `RecipePhotoField` on the form | `RatingPhotoDialog` on the detail screen |
+| Shown once? | one main photo | your photo only in **Your rating**, never in **Other ratings** |
 
 ## Demo accounts
 
@@ -89,8 +101,54 @@ per-dish top recipe.
 - `lib/services/session_controller.dart` — login, signup, logout, token restore
 - `lib/services/theme_controller.dart` — System/Light/Dark persistence
 - `lib/utils/ranking.dart` — dish grouping and the shared ranking rules
-- `lib/screens/home_screen.dart` — dish grid, filters and search
-- `lib/screens/dish_screen.dart` — ranked recipes inside one dish
-- `lib/screens/recipe_form_screen.dart` — device photo upload and image URL
-- `lib/screens/recipe_detail_screen.dart` — owner actions, rating and proof
-- `lib/theme.dart` — `TasteHubColors` light/dark theme extension
+- `lib/theme.dart` — `TasteHubColors`, spacing/radii tokens, shared theme
+- `lib/widgets/` — shared pieces used by more than one screen:
+  `section_card.dart`, `proof_thumbnail.dart`, `recipe_photo_field.dart`,
+  `recipe_thumbnail.dart`, `rating_stars.dart`, `status_views.dart`,
+  `dish_card.dart`
+
+## Screen sections (small hand-off units)
+
+Each screen is an orchestrator plus small section files. A section can be
+changed without reading the whole app; each file header states what it owns.
+
+### Home and dish
+
+| File | Owns |
+|---|---|
+| `lib/screens/home_screen.dart` | title bar, search, filters, add-recipe sheet, empty states |
+| `lib/widgets/dish_card.dart` | one dish card; top-pick/new badges and search matches |
+| `lib/screens/dish_screen.dart` | dish hero, “Best rated first” explainer, ranked rows |
+
+### Recipe detail
+
+`recipe_detail_screen.dart` loads the recipe and owns actions (rate, edit,
+delete). The visual pieces are independent:
+
+| File | Owns |
+|---|---|
+| `lib/screens/recipe_detail/recipe_hero.dart` | main photo, title overlay, add-photo shortcut |
+| `lib/screens/recipe_detail/recipe_overview.dart` | owner/time/ingredient/rating chips |
+| `lib/screens/recipe_detail/ingredients_card.dart` | ingredient checklist |
+| `lib/screens/recipe_detail/steps_card.dart` | numbered cooking steps |
+| `lib/screens/recipe_detail/recipe_rating_section.dart` | your stars, your rating photo |
+| `lib/screens/recipe_detail/community_ratings.dart` | other people’s ratings |
+| `lib/screens/recipe_detail/rating_photo_dialog.dart` | rate + attach a rating photo |
+
+### Recipe form
+
+`recipe_form_screen.dart` owns controllers, upload, save and the dirty-form
+guard. The sections are independent:
+
+| File | Owns |
+|---|---|
+| `lib/screens/recipe_form/basics_fields.dart` | title, dish, ingredient, time, YouTube |
+| `lib/screens/recipe_form/ingredient_editor.dart` | ingredient rows |
+| `lib/screens/recipe_form/step_editor.dart` | numbered step rows |
+| `lib/screens/recipe_form/ai_draft_banner.dart` | review note for AI drafts |
+| `lib/screens/recipe_form/save_bar.dart` | sticky Save / unsaved-changes bar |
+
+To hand a section to another model, share that file, `lib/theme.dart` (tokens),
+and the shared widgets it imports — most sections use only `section_card.dart`
+and one of `rating_stars.dart` or `proof_thumbnail.dart`. The file headers
+describe the inputs and ownership.

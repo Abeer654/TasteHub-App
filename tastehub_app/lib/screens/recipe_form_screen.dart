@@ -1,19 +1,36 @@
 // ============================================================
 //  recipe_form_screen.dart - add and edit a recipe
 //
-//  The same screen is used for AI drafts. In that case the fields
-//  arrive pre-filled, a banner explains what Gemini inferred, and the
-//  user still has to press "Save recipe".
+//  This file owns state only: controllers, saving, photo upload and the
+//  unsaved-changes guard. The visual sections are independent files under
+//  screens/recipe_form/:
+//
+//    basics_fields.dart      title, dish, ingredient, time, YouTube
+//    ingredient_editor.dart  ingredient rows
+//    step_editor.dart        numbered step rows
+//    ai_draft_banner.dart    review note when opened from an AI draft
+//    save_bar.dart           sticky Save / unsaved changes bar
+//
+//  The main recipe photo uses widgets/recipe_photo_field.dart. It is a
+//  different concept from a rating photo, which lives on the detail screen.
 // ============================================================
+
+import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../models/recipe.dart';
 import '../services/api_client.dart';
 import '../services/api_exception.dart';
 import '../theme.dart';
+import '../widgets/recipe_photo_field.dart';
+import '../widgets/section_card.dart';
+import 'recipe_form/ai_draft_banner.dart';
+import 'recipe_form/basics_fields.dart';
+import 'recipe_form/ingredient_editor.dart';
+import 'recipe_form/save_bar.dart';
+import 'recipe_form/step_editor.dart';
 
 class RecipeFormScreen extends StatefulWidget {
   const RecipeFormScreen({
@@ -54,6 +71,7 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
 
   bool _saving = false;
   bool _uploadingPhoto = false;
+  bool _dirty = false;
   Uint8List? _localPreview;
 
   bool get _isEditing => widget.existing != null;
@@ -75,15 +93,26 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
     _imageRef = TextEditingController(text: source?.imageRef ?? '');
     _youtubeUrl = TextEditingController(text: source?.youtubeUrl ?? '');
 
-    for (final ingredient in source?.ingredients ?? const <String>[]) {
-      _ingredients.add(TextEditingController(text: ingredient));
+    for (final controller in [
+      _title,
+      _dish,
+      _mainIngredient,
+      _cookingTime,
+      _imageRef,
+      _youtubeUrl,
+    ]) {
+      controller.addListener(_markDirty);
     }
-    if (_ingredients.isEmpty) _ingredients.add(TextEditingController());
+
+    for (final ingredient in source?.ingredients ?? const <String>[]) {
+      _ingredients.add(_newRowController(ingredient));
+    }
+    if (_ingredients.isEmpty) _ingredients.add(_newRowController());
 
     for (final step in source?.steps ?? const <String>[]) {
-      _steps.add(TextEditingController(text: step));
+      _steps.add(_newRowController(step));
     }
-    if (_steps.isEmpty) _steps.add(TextEditingController());
+    if (_steps.isEmpty) _steps.add(_newRowController());
   }
 
   @override
@@ -101,6 +130,17 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
       controller.dispose();
     }
     super.dispose();
+  }
+
+  TextEditingController _newRowController([String text = '']) {
+    final controller = TextEditingController(text: text);
+    controller.addListener(_markDirty);
+    return controller;
+  }
+
+  void _markDirty() {
+    if (_dirty || !mounted) return;
+    setState(() => _dirty = true);
   }
 
   void _snack(String message, {bool isError = false}) {
@@ -149,7 +189,7 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
       final imageRef = await widget.api.uploadImage(bytes, file.name);
       if (!mounted) return;
       _imageRef.text = imageRef;
-      _snack('Photo uploaded.');
+      _snack('Recipe photo uploaded.');
     } on ApiException catch (error) {
       if (mounted) {
         setState(() => _localPreview = null);
@@ -166,10 +206,48 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
   }
 
   void _removePhoto() {
-    setState(() {
-      _imageRef.clear();
-      _localPreview = null;
-    });
+    setState(() => _localPreview = null);
+    _imageRef.clear();
+    _markDirty();
+  }
+
+  void _onPhotoUrlChanged(String _) {
+    if (_localPreview != null) {
+      setState(() => _localPreview = null);
+    }
+    _markDirty();
+  }
+
+  Future<bool> _confirmDiscard() async {
+    final colors = context.tasteHubColors;
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Discard changes?'),
+        content: const Text('Your edits to this recipe will be lost.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep editing'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: colors.error),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    return discard ?? false;
+  }
+
+  Future<void> _onPopInvoked(bool didPop, Object? result) async {
+    if (didPop || _saving) return;
+
+    final discard = await _confirmDiscard();
+    if (!mounted || !discard) return;
+    setState(() => _dirty = false);
+    Navigator.of(context).pop();
   }
 
   Future<void> _save() async {
@@ -216,6 +294,7 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
       }
 
       if (!mounted) return;
+      setState(() => _dirty = false);
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
@@ -228,592 +307,148 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
       if (!mounted) return;
       setState(() => _saving = false);
       _snack(error.message, isError: true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _snack('Could not save the recipe: $error', isError: true);
     }
   }
 
   void _addIngredient() {
-    setState(() => _ingredients.add(TextEditingController()));
+    setState(() {
+      _ingredients.add(_newRowController());
+      _dirty = true;
+    });
   }
 
   void _removeIngredient(int index) {
     if (_ingredients.length == 1) {
       _ingredients.first.clear();
+      _markDirty();
       return;
     }
     setState(() {
       _ingredients.removeAt(index).dispose();
+      _dirty = true;
     });
   }
 
   void _addStep() {
-    setState(() => _steps.add(TextEditingController()));
+    setState(() {
+      _steps.add(_newRowController());
+      _dirty = true;
+    });
   }
 
   void _removeStep(int index) {
     if (_steps.length == 1) {
       _steps.first.clear();
+      _markDirty();
       return;
     }
     setState(() {
       _steps.removeAt(index).dispose();
+      _dirty = true;
     });
   }
 
-  Widget _buildPhotoField(BuildContext context) {
-    final colors = context.tasteHubColors;
-    final hasRef = _imageRef.text.trim().isNotEmpty;
-    final resolved = widget.api.resolveMediaUrl(_imageRef.text);
-
-    Widget preview;
-    if (_localPreview != null) {
-      preview = Image.memory(
-        _localPreview!,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => _PhotoPlaceholder(colors: colors),
-      );
-    } else if (resolved.isNotEmpty) {
-      preview = Image.network(
-        resolved,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => _PhotoPlaceholder(colors: colors),
-        loadingBuilder: (context, child, progress) =>
-            progress == null ? child : _PhotoPlaceholder(colors: colors),
-      );
-    } else {
-      preview = _PhotoPlaceholder(colors: colors);
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Photo', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 4),
-        Text(
-          'Upload a real photo from this device, or paste an image URL.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        const SizedBox(height: 12),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: SizedBox(width: 116, height: 88, child: preview),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: _saving || _uploadingPhoto
-                            ? null
-                            : _pickPhoto,
-                        icon: _uploadingPhoto
-                            ? const SizedBox(
-                                width: 15,
-                                height: 15,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.photo_library_outlined,
-                                size: 17,
-                              ),
-                        label: Text(
-                          _uploadingPhoto
-                              ? 'Uploading...'
-                              : hasRef
-                              ? 'Replace photo'
-                              : 'Upload photo',
-                        ),
-                      ),
-                      if (hasRef || _localPreview != null)
-                        TextButton(
-                          onPressed: _saving ? null : _removePhoto,
-                          child: const Text('Remove'),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _imageRef,
-                    textInputAction: TextInputAction.next,
-                    onChanged: (_) {
-                      if (_localPreview != null) {
-                        setState(() => _localPreview = null);
-                      }
-                    },
-                    decoration: const InputDecoration(
-                      labelText: 'Image URL',
-                      hintText: 'https://... or an uploaded /uploads/... path',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
+  void _cancel() {
+    Navigator.of(context).maybePop();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_isEditing ? 'Edit recipe' : 'Add recipe'),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 48),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 820),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (widget.draftMessage != null) ...[
-                    _AiDraftBanner(
-                      message: widget.draftMessage!,
-                      inferredFields: widget.inferredFields,
-                      followUpQuestions: widget.followUpQuestions,
+    return PopScope<Object?>(
+      canPop: !_dirty,
+      onPopInvokedWithResult: _onPopInvoked,
+      child: Scaffold(
+        appBar: AppBar(title: Text(_isEditing ? 'Edit recipe' : 'Add recipe')),
+        bottomNavigationBar: RecipeSaveBar(
+          dirty: _dirty,
+          saving: _saving,
+          uploading: _uploadingPhoto,
+          isEditing: _isEditing,
+          onSave: _save,
+          onCancel: _cancel,
+        ),
+        body: SingleChildScrollView(
+          padding: TasteHubLayout.pagePadding(context),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 820),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (widget.draftMessage != null) ...[
+                      AiDraftBanner(
+                        message: widget.draftMessage!,
+                        inferredFields: widget.inferredFields,
+                        followUpQuestions: widget.followUpQuestions,
+                      ),
+                      const SizedBox(height: TasteHubSpacing.section),
+                    ],
+                    SectionCard(
+                      title: 'Recipe details',
+                      icon: Icons.restaurant_menu_rounded,
+                      subtitle: 'Name the dish and add the basics.',
+                      child: RecipeBasicsFields(
+                        title: _title,
+                        dish: _dish,
+                        mainIngredient: _mainIngredient,
+                        cookingTime: _cookingTime,
+                        youtubeUrl: _youtubeUrl,
+                        isEditing: _isEditing,
+                        enabled: !_saving,
+                      ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: TasteHubSpacing.section),
+                    SectionCard(
+                      title: 'Recipe photo',
+                      icon: Icons.photo_camera_outlined,
+                      subtitle: 'The main photo shown on the dish card.',
+                      child: RecipePhotoField(
+                        controller: _imageRef,
+                        resolveMediaUrl: widget.api.resolveMediaUrl,
+                        localPreview: _localPreview,
+                        uploading: _uploadingPhoto,
+                        enabled: !_saving,
+                        onChanged: _onPhotoUrlChanged,
+                        onPick: _pickPhoto,
+                        onRemove: _removePhoto,
+                      ),
+                    ),
+                    const SizedBox(height: TasteHubSpacing.section),
+                    SectionCard(
+                      title: 'Ingredients',
+                      icon: Icons.shopping_basket_outlined,
+                      subtitle: 'What you need for this recipe.',
+                      child: IngredientEditor(
+                        controllers: _ingredients,
+                        enabled: !_saving,
+                        onAdd: _addIngredient,
+                        onRemove: _removeIngredient,
+                      ),
+                    ),
+                    const SizedBox(height: TasteHubSpacing.section),
+                    SectionCard(
+                      title: 'Cooking steps',
+                      icon: Icons.local_fire_department_outlined,
+                      subtitle: 'One action per step is easiest to follow.',
+                      child: StepEditor(
+                        controllers: _steps,
+                        enabled: !_saving,
+                        onAdd: _addStep,
+                        onRemove: _removeStep,
+                      ),
+                    ),
                   ],
-                  _Section(
-                    title: 'The basics',
-                    icon: Icons.restaurant_menu_rounded,
-                    child: Column(
-                      children: [
-                        TextFormField(
-                          controller: _title,
-                          textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(
-                            labelText: 'Recipe title *',
-                            hintText: 'Chicken Biryani',
-                          ),
-                          validator: (value) {
-                            if ((value ?? '').trim().isEmpty) {
-                              return 'Give the recipe a title.';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 14),
-                        LayoutBuilder(
-                          builder: (context, constraints) {
-                            final wide = constraints.maxWidth >= 620;
-                            final dish = TextFormField(
-                              controller: _dish,
-                              readOnly: _isEditing,
-                              textInputAction: TextInputAction.next,
-                              decoration: InputDecoration(
-                                labelText: 'Dish',
-                                hintText: 'Biryani',
-                                helperText: _isEditing
-                                    ? 'The dish cannot change after creation.'
-                                    : null,
-                              ),
-                            );
-                            final ingredient = TextFormField(
-                              controller: _mainIngredient,
-                              textInputAction: TextInputAction.next,
-                              decoration: const InputDecoration(
-                                labelText: 'Main ingredient',
-                                hintText: 'rice',
-                              ),
-                            );
-
-                            if (!wide) {
-                              return Column(
-                                children: [
-                                  dish,
-                                  const SizedBox(height: 14),
-                                  ingredient,
-                                ],
-                              );
-                            }
-
-                            return Row(
-                              children: [
-                                Expanded(child: dish),
-                                const SizedBox(width: 14),
-                                Expanded(child: ingredient),
-                              ],
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 14),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: SizedBox(
-                            width: 260,
-                            child: TextFormField(
-                              controller: _cookingTime,
-                              keyboardType: TextInputType.number,
-                              textInputAction: TextInputAction.next,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                              ],
-                              decoration: const InputDecoration(
-                                labelText: 'Cooking time (minutes)',
-                                hintText: '60',
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        TextFormField(
-                          controller: _youtubeUrl,
-                          textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(
-                            labelText: 'YouTube URL',
-                            hintText: 'https://www.youtube.com/...',
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        _buildPhotoField(context),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  _Section(
-                    title: 'Ingredients',
-                    icon: Icons.shopping_basket_outlined,
-                    trailing: TextButton.icon(
-                      onPressed: _saving ? null : _addIngredient,
-                      icon: const Icon(Icons.add_rounded, size: 18),
-                      label: const Text('Add'),
-                    ),
-                    child: Column(
-                      children: [
-                        for (var i = 0; i < _ingredients.length; i++)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: _ingredients[i],
-                                    textInputAction: TextInputAction.next,
-                                    decoration: InputDecoration(
-                                      hintText: 'Ingredient ${i + 1}',
-                                      prefixIcon: Padding(
-                                        padding: const EdgeInsets.only(
-                                          left: 16,
-                                          right: 10,
-                                        ),
-                                        child: Icon(
-                                          Icons.circle,
-                                          size: 7,
-                                          color: context.tasteHubColors.accent,
-                                        ),
-                                      ),
-                                      prefixIconConstraints:
-                                          const BoxConstraints(minWidth: 34),
-                                    ),
-                                  ),
-                                ),
-                                IconButton(
-                                  onPressed: _saving
-                                      ? null
-                                      : () => _removeIngredient(i),
-                                  tooltip: 'Remove ingredient',
-                                  icon: const Icon(
-                                    Icons.close_rounded,
-                                    size: 19,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  _Section(
-                    title: 'Cooking steps',
-                    icon: Icons.local_fire_department_outlined,
-                    trailing: TextButton.icon(
-                      onPressed: _saving ? null : _addStep,
-                      icon: const Icon(Icons.add_rounded, size: 18),
-                      label: const Text('Add'),
-                    ),
-                    child: Column(
-                      children: [
-                        for (var i = 0; i < _steps.length; i++)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 14),
-                                  child: Container(
-                                    width: 26,
-                                    height: 26,
-                                    alignment: Alignment.center,
-                                    decoration: BoxDecoration(
-                                      color: context.tasteHubColors.accent
-                                          .withValues(alpha: 0.1),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Text(
-                                      '${i + 1}',
-                                      style: TextStyle(
-                                        color: context.tasteHubColors.accent,
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 12.5,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: _steps[i],
-                                    minLines: 1,
-                                    maxLines: 4,
-                                    keyboardType: TextInputType.multiline,
-                                    decoration: InputDecoration(
-                                      hintText: i == 0
-                                          ? 'Describe the first step...'
-                                          : 'Describe step ${i + 1}...',
-                                    ),
-                                  ),
-                                ),
-                                IconButton(
-                                  onPressed: _saving
-                                      ? null
-                                      : () => _removeStep(i),
-                                  tooltip: 'Remove step',
-                                  icon: const Icon(
-                                    Icons.close_rounded,
-                                    size: 19,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 26),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: _saving
-                            ? null
-                            : () => Navigator.of(context).pop(),
-                        child: const Text('Cancel'),
-                      ),
-                      const SizedBox(width: 10),
-                      FilledButton.icon(
-                        onPressed: _saving || _uploadingPhoto ? null : _save,
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 22,
-                            vertical: 16,
-                          ),
-                        ),
-                        icon: _saving
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.check_rounded, size: 19),
-                        label: Text(
-                          _saving
-                              ? 'Saving...'
-                              : _isEditing
-                              ? 'Save changes'
-                              : 'Save recipe',
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
               ),
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _Section extends StatelessWidget {
-  const _Section({
-    required this.title,
-    required this.icon,
-    required this.child,
-    this.trailing,
-  });
-
-  final String title;
-  final IconData icon;
-  final Widget child;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.tasteHubColors;
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: colors.card,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: colors.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 19, color: colors.accent),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              ?trailing,
-            ],
-          ),
-          const SizedBox(height: 16),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-class _AiDraftBanner extends StatelessWidget {
-  const _AiDraftBanner({
-    required this.message,
-    required this.inferredFields,
-    required this.followUpQuestions,
-  });
-
-  final String message;
-  final List<String> inferredFields;
-  final List<String> followUpQuestions;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.tasteHubColors;
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            colors.accent.withValues(alpha: 0.1),
-            colors.gold.withValues(alpha: 0.1),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: colors.accent.withValues(alpha: 0.22)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.auto_awesome_rounded,
-                color: colors.accent,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'AI draft - review before saving',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ],
-          ),
-          if (message.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(message, style: Theme.of(context).textTheme.bodyMedium),
-          ],
-          if (inferredFields.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final field in inferredFields)
-                  Chip(
-                    label: Text('AI filled: $field'),
-                    labelStyle: TextStyle(
-                      fontSize: 11.5,
-                      color: colors.accent,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    backgroundColor: colors.card,
-                    side: BorderSide(
-                      color: colors.accent.withValues(alpha: 0.25),
-                    ),
-                    visualDensity: VisualDensity.compact,
-                  ),
-              ],
-            ),
-          ],
-          if (followUpQuestions.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              'Worth checking:',
-              style: Theme.of(context).textTheme.labelLarge
-                  ?.copyWith(color: colors.muted, fontSize: 12),
-            ),
-            const SizedBox(height: 4),
-            for (final question in followUpQuestions)
-              Padding(
-                padding: const EdgeInsets.only(top: 3),
-                child: Text(
-                  '- $question',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _PhotoPlaceholder extends StatelessWidget {
-  const _PhotoPlaceholder({required this.colors});
-
-  final TasteHubColors colors;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: colors.field,
-      alignment: Alignment.center,
-      child: Icon(
-        Icons.photo_outlined,
-        size: 30,
-        color: colors.muted,
       ),
     );
   }

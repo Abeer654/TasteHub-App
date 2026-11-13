@@ -1,14 +1,22 @@
 // ============================================================
 //  recipe_detail_screen.dart - one recipe, with rating and editing
 //
-//  Only the owner sees Edit/Delete. Any logged-in user may rate and
-//  attach a proof photo. Photos can be uploaded from the device or
-//  referenced by URL.
+//  This file is the orchestrator only: it loads the recipe and owns the
+//  actions. The visual pieces live in screens/recipe_detail/ so any one
+//  section can be handed to another model without sharing the whole screen:
+//
+//    recipe_hero.dart            main photo + title overlay
+//    recipe_overview.dart        quick fact chips
+//    ingredients_card.dart       ingredient list
+//    steps_card.dart             numbered cooking steps
+//    recipe_rating_section.dart  your rating + your rating photo
+//    community_ratings.dart      other people's ratings
+//    rating_photo_dialog.dart    rate + attach a rating photo
+//
+//  Only the owner sees Edit/Delete. Any logged-in user may rate.
+//  Recipe photos and rating photos are separate concepts on purpose.
 // ============================================================
 
-import 'dart:typed_data';
-
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -17,8 +25,13 @@ import '../services/api_client.dart';
 import '../services/api_exception.dart';
 import '../services/session_controller.dart';
 import '../theme.dart';
-import '../widgets/rating_stars.dart';
-import '../widgets/recipe_thumbnail.dart';
+import 'recipe_detail/community_ratings.dart';
+import 'recipe_detail/ingredients_card.dart';
+import 'recipe_detail/rating_photo_dialog.dart';
+import 'recipe_detail/recipe_hero.dart';
+import 'recipe_detail/recipe_overview.dart';
+import 'recipe_detail/recipe_rating_section.dart';
+import 'recipe_detail/steps_card.dart';
 import 'recipe_form_screen.dart';
 
 class RecipeDetailScreen extends StatefulWidget {
@@ -47,6 +60,10 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   String? _error;
 
   bool get _isOwner => widget.session.user?.id == _recipe.ownerId;
+  int get _currentUserId => widget.session.user?.id ?? 0;
+
+  bool get _hasOtherRatings =>
+      _recipe.ratings.any((rating) => rating.userId != _currentUserId);
 
   @override
   void initState() {
@@ -112,10 +129,10 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     }
   }
 
-  Future<void> _showProofDialog() async {
-    final result = await showDialog<({int stars, String proof})>(
+  Future<void> _showRatingPhotoDialog() async {
+    final result = await showDialog<RatingPhotoResult>(
       context: context,
-      builder: (context) => _ProofDialog(
+      builder: (context) => RatingPhotoDialog(
         api: widget.api,
         initialStars: _recipe.myRating > 0 ? _recipe.myRating : 5,
         initialProof: _recipe.myRatingProofImageRef,
@@ -123,7 +140,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     );
 
     if (result == null) return;
-    await _rate(result.stars, proofImageRef: result.proof);
+    await _rate(result.stars, proofImageRef: result.proofImageRef);
   }
 
   Future<void> _openLink(String rawUrl) async {
@@ -192,11 +209,16 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.tasteHubColors;
     final busy = _rating || _deleting;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Recipe'),
+        title: Text(
+          _recipe.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: [
           if (_isOwner) ...[
             IconButton(
@@ -204,10 +226,31 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
               tooltip: 'Edit recipe',
               icon: const Icon(Icons.edit_outlined),
             ),
-            IconButton(
-              onPressed: busy ? null : _delete,
-              tooltip: 'Delete recipe',
-              icon: const Icon(Icons.delete_outline_rounded),
+            PopupMenuButton<String>(
+              tooltip: 'More actions',
+              enabled: !busy,
+              onSelected: (value) {
+                if (value == 'delete') _delete();
+              },
+              itemBuilder: (context) => [
+                PopupMenuItem<String>(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.delete_outline_rounded,
+                        size: 19,
+                        color: colors.error,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Delete recipe',
+                        style: TextStyle(color: colors.error),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ],
           const SizedBox(width: 8),
@@ -219,342 +262,70 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
               )
             : null,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 48),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 920),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildHero(context),
-                if (_error != null) ...[
-                  const SizedBox(height: 16),
-                  _ErrorBanner(message: _error!, onRetry: () => _loadDetail()),
-                ],
-                const SizedBox(height: 22),
-                _buildMeta(context),
-                const SizedBox(height: 22),
-                _buildRatingCard(context),
-                if (_recipe.ingredients.isNotEmpty) ...[
-                  const SizedBox(height: 22),
-                  _SectionCard(
-                    title: 'Ingredients',
-                    icon: Icons.shopping_basket_outlined,
-                    child: Column(
-                      children: [
-                        for (final ingredient in _recipe.ingredients)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 6),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2),
-                                  child: Icon(
-                                    Icons.check_circle_rounded,
-                                    size: 18,
-                                    color: context.tasteHubColors.success,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    ingredient,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodyLarge,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
+      body: RefreshIndicator(
+        onRefresh: () => _loadDetail(showSpinner: false),
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: TasteHubLayout.pagePadding(context),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: TasteHubLayout.contentWidth,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  RecipeHero(
+                    recipe: _recipe,
+                    imageUrl: widget.api.resolveMediaUrl(_recipe.imageRef),
+                    canEdit: _isOwner,
+                    onAddPhoto: busy ? () {} : _edit,
                   ),
-                ],
-                if (_recipe.steps.isNotEmpty) ...[
-                  const SizedBox(height: 22),
-                  _SectionCard(
-                    title: 'Cooking steps',
-                    icon: Icons.local_fire_department_outlined,
-                    child: Column(
-                      children: [
-                        for (var i = 0; i < _recipe.steps.length; i++)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  width: 26,
-                                  height: 26,
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    color: context.tasteHubColors.accent
-                                        .withValues(alpha: 0.1),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Text(
-                                    '${i + 1}',
-                                    style: TextStyle(
-                                      color:
-                                          context.tasteHubColors.accent,
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 12.5,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    _recipe.steps[i],
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodyLarge,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                      ],
+                  if (_error != null) ...[
+                    const SizedBox(height: TasteHubSpacing.md),
+                    _ErrorBanner(
+                      message: _error!,
+                      onRetry: () => _loadDetail(),
                     ),
+                  ],
+                  const SizedBox(height: TasteHubSpacing.lg),
+                  RecipeOverview(recipe: _recipe),
+                  if (_recipe.ingredients.isNotEmpty) ...[
+                    const SizedBox(height: TasteHubSpacing.section),
+                    IngredientsCard(ingredients: _recipe.ingredients),
+                  ],
+                  if (_recipe.steps.isNotEmpty) ...[
+                    const SizedBox(height: TasteHubSpacing.section),
+                    StepsCard(steps: _recipe.steps),
+                  ],
+                  const SizedBox(height: TasteHubSpacing.section),
+                  RecipeRatingSection(
+                    recipe: _recipe,
+                    busy: busy,
+                    onRate: _rate,
+                    onEditPhoto: _showRatingPhotoDialog,
+                    onOpenPhoto: _openLink,
+                    resolveMediaUrl: widget.api.resolveMediaUrl,
                   ),
-                ],
-                if (_recipe.ratings.isNotEmpty) ...[
-                  const SizedBox(height: 22),
-                  _SectionCard(
-                    title: 'Ratings',
-                    icon: Icons.star_outline_rounded,
-                    child: Column(
-                      children: [
-                        for (final rating in _recipe.ratings)
-                          _RatingRow(
-                            rating: rating,
-                            api: widget.api,
-                            onOpenLink: _openLink,
-                          ),
-                      ],
+                  if (_hasOtherRatings) ...[
+                    const SizedBox(height: TasteHubSpacing.section),
+                    CommunityRatingsCard(
+                      ratings: _recipe.ratings,
+                      currentUserId: _currentUserId,
+                      resolveMediaUrl: widget.api.resolveMediaUrl,
+                      onOpenPhoto: _openLink,
                     ),
-                  ),
+                  ],
+                  if (_buildYoutubeButton(context) != null) ...[
+                    const SizedBox(height: TasteHubSpacing.section),
+                    _buildYoutubeButton(context)!,
+                  ],
+                  const SizedBox(height: TasteHubSpacing.md),
                 ],
-                if (_buildYoutubeButton(context) != null) ...[
-                  const SizedBox(height: 26),
-                  _buildYoutubeButton(context)!,
-                ],
-              ],
+              ),
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildHero(BuildContext context) {
-    final colors = context.tasteHubColors;
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: Stack(
-        children: [
-          RecipeThumbnail(
-            imageRef: widget.api.resolveMediaUrl(_recipe.imageRef),
-            dish: _recipe.dish,
-            title: _recipe.title,
-            height: 280,
-            width: double.infinity,
-          ),
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, colors.ink.withValues(alpha: 0.7)],
-                  stops: const [0.45, 1],
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            left: 24,
-            right: 24,
-            bottom: 22,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    _recipe.dish.toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.3,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 9),
-                Text(
-                  _recipe.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 30,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.8,
-                    height: 1.1,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMeta(BuildContext context) {
-    final time = _recipe.cookingTime > 0
-        ? '${_recipe.cookingTime} minutes'
-        : 'No time set';
-    final ingredient = _recipe.mainIngredient.isEmpty
-        ? 'Ingredient not set'
-        : _recipe.mainIngredient;
-
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        _MetaChip(icon: Icons.person_outline_rounded, label: 'by ${_recipe.ownerName}'),
-        _MetaChip(icon: Icons.schedule_rounded, label: time),
-        _MetaChip(icon: Icons.egg_alt_outlined, label: ingredient),
-        if (_recipe.ratingCount > 0)
-          _MetaChip(
-            icon: Icons.star_rounded,
-            label:
-                '${_recipe.averageRating.toStringAsFixed(1)} from ${_recipe.ratingCount} rating${_recipe.ratingCount == 1 ? '' : 's'}',
-          ),
-      ],
-    );
-  }
-
-  Widget _buildRatingCard(BuildContext context) {
-    final colors = context.tasteHubColors;
-    final hasProof = _recipe.myRatingProofImageRef.isNotEmpty;
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: colors.card,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: colors.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: 20,
-            runSpacing: 12,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'YOUR RATING',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: colors.muted,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _recipe.myRating > 0
-                        ? '${_recipe.myRating} out of 5'
-                        : 'Tap a star to rate',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ],
-              ),
-              StarPicker(
-                value: _recipe.myRating,
-                onChanged: _rating ? (_) {} : (value) => _rate(value),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          const Divider(height: 1),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 12,
-            runSpacing: 4,
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  RatingStars(value: _recipe.averageRating, size: 18),
-                  const SizedBox(width: 8),
-                  RatingLabel(
-                    averageRating: _recipe.averageRating,
-                    ratingCount: _recipe.ratingCount,
-                  ),
-                ],
-              ),
-              TextButton.icon(
-                onPressed: _rating ? null : _showProofDialog,
-                icon: Icon(
-                  hasProof
-                      ? Icons.photo_library_rounded
-                      : Icons.add_a_photo_outlined,
-                  size: 17,
-                ),
-                label: Text(hasProof ? 'Edit proof' : 'Add proof'),
-              ),
-            ],
-          ),
-          if (hasProof)
-            Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Row(
-                children: [
-                  _ProofThumb(
-                    imageUrl: widget.api.resolveMediaUrl(
-                      _recipe.myRatingProofImageRef,
-                    ),
-                    size: 40,
-                  ),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: Text(
-                      _recipe.myRatingProofImageRef,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-                  if (_recipe.myRatingProofImageRef.startsWith('http'))
-                    IconButton(
-                      onPressed: () => _openLink(_recipe.myRatingProofImageRef),
-                      tooltip: 'Open proof photo',
-                      icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                    ),
-                ],
-              ),
-            ),
-        ],
       ),
     );
   }
@@ -573,351 +344,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       ),
       onPressed: () => _openLink(uri.toString()),
       icon: const Icon(Icons.smart_display_rounded),
-      label: const Text('Find it on YouTube'),
-    );
-  }
-}
-
-class _ProofDialog extends StatefulWidget {
-  const _ProofDialog({
-    required this.api,
-    required this.initialStars,
-    required this.initialProof,
-  });
-
-  final ApiClient api;
-  final int initialStars;
-  final String initialProof;
-
-  @override
-  State<_ProofDialog> createState() => _ProofDialogState();
-}
-
-class _ProofDialogState extends State<_ProofDialog> {
-  late int _stars = widget.initialStars;
-  late final TextEditingController _proof = TextEditingController(
-    text: widget.initialProof,
-  );
-  bool _uploading = false;
-  Uint8List? _preview;
-  String? _error;
-
-  @override
-  void dispose() {
-    _proof.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickProof() async {
-    const typeGroup = XTypeGroup(
-      label: 'Photos',
-      extensions: ['jpg', 'jpeg', 'png', 'webp'],
-    );
-
-    XFile? file;
-    try {
-      file = await openFile(acceptedTypeGroups: const [typeGroup]);
-    } catch (error) {
-      setState(() => _error = 'Could not open the file picker: $error');
-      return;
-    }
-    if (file == null || !mounted) return;
-
-    setState(() {
-      _uploading = true;
-      _error = null;
-    });
-
-    try {
-      final bytes = await file.readAsBytes();
-      if (bytes.length > 10 * 1024 * 1024) {
-        setState(() => _error = 'Choose an image smaller than 10 MB.');
-        return;
-      }
-      final ref = await widget.api.uploadImage(bytes, file.name);
-      if (!mounted) return;
-      setState(() {
-        _proof.text = ref;
-        _preview = bytes;
-      });
-    } on ApiException catch (error) {
-      if (mounted) setState(() => _error = error.message);
-    } finally {
-      if (mounted) setState(() => _uploading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.tasteHubColors;
-    final resolved = widget.api.resolveMediaUrl(_proof.text);
-
-    Widget preview = Container(
-      width: 54,
-      height: 54,
-      decoration: BoxDecoration(
-        color: colors.field,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Icon(Icons.photo_outlined, color: colors.muted, size: 24),
-    );
-
-    if (_preview != null) {
-      preview = ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: Image.memory(_preview!, width: 54, height: 54, fit: BoxFit.cover),
-      );
-    } else if (resolved.isNotEmpty) {
-      // Keep the static placeholder above as the error fallback. Referring
-      // to `preview` here would recurse forever when the URL fails to load.
-      preview = ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: Image.network(
-          resolved,
-          width: 54,
-          height: 54,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => Container(
-            width: 54,
-            height: 54,
-            decoration: BoxDecoration(
-              color: colors.field,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              Icons.broken_image_outlined,
-              color: colors.muted,
-              size: 24,
-            ),
-          ),
-        ),
-      );
-    }
-
-    return AlertDialog(
-      title: const Text('Rate with a proof photo'),
-      content: SizedBox(
-        width: 440,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'How many stars? Attach a real photo from this device, or '
-                'paste an image URL. Both prove you cooked it.',
-              ),
-              const SizedBox(height: 14),
-              Center(
-                child: StarPicker(
-                  value: _stars,
-                  onChanged: (value) => setState(() => _stars = value),
-                ),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  preview,
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _uploading ? null : _pickProof,
-                      icon: _uploading
-                          ? const SizedBox(
-                              width: 15,
-                              height: 15,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.photo_library_outlined, size: 17),
-                      label: Text(
-                        _uploading ? 'Uploading...' : 'Upload proof photo',
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _proof,
-                decoration: const InputDecoration(
-                  labelText: 'Proof image URL or /uploads/... path',
-                  hintText: 'https://example.com/my-biryani.jpg',
-                  helperText: 'Leave empty to remove an existing proof.',
-                ),
-                onChanged: (_) {
-                  if (_preview != null) setState(() => _preview = null);
-                },
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 10),
-                Text(
-                  _error!,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: colors.error),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _uploading
-              ? null
-              : () => Navigator.of(context).pop((
-                  stars: _stars,
-                  proof: _proof.text.trim(),
-                )),
-          child: const Text('Save rating'),
-        ),
-      ],
-    );
-  }
-}
-
-class _RatingRow extends StatelessWidget {
-  const _RatingRow({
-    required this.rating,
-    required this.api,
-    required this.onOpenLink,
-  });
-
-  final Rating rating;
-  final ApiClient api;
-  final ValueChanged<String> onOpenLink;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.tasteHubColors;
-    final name = rating.userName.isEmpty ? 'User ${rating.userId}' : rating.userName;
-    final proofUrl = api.resolveMediaUrl(rating.proofImageRef);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 16,
-            backgroundColor: colors.accent.withValues(alpha: 0.1),
-            child: Text(
-              name.characters.first.toUpperCase(),
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                color: colors.accent,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ),
-          RatingStars(value: rating.stars.toDouble(), size: 16),
-          const SizedBox(width: 8),
-          Text(
-            '${rating.stars}/5',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          if (rating.proofImageRef.isNotEmpty) ...[
-            const SizedBox(width: 8),
-            InkWell(
-              onTap: proofUrl.startsWith('http')
-                  ? () => onOpenLink(rating.proofImageRef)
-                  : null,
-              borderRadius: BorderRadius.circular(10),
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: _ProofThumb(imageUrl: proofUrl, size: 30),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _MetaChip extends StatelessWidget {
-  const _MetaChip({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.tasteHubColors;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-      decoration: BoxDecoration(
-        color: colors.card,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: colors.line),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: colors.accent),
-          const SizedBox(width: 7),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: colors.ink,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SectionCard extends StatelessWidget {
-  const _SectionCard({
-    required this.title,
-    required this.icon,
-    required this.child,
-  });
-
-  final String title;
-  final IconData icon;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.tasteHubColors;
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: colors.card,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: colors.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 19, color: colors.accent),
-              const SizedBox(width: 8),
-              Text(title, style: Theme.of(context).textTheme.titleMedium),
-            ],
-          ),
-          const SizedBox(height: 12),
-          child,
-        ],
-      ),
+      label: const Text('Watch on YouTube'),
     );
   }
 }
@@ -936,7 +363,7 @@ class _ErrorBanner extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
       decoration: BoxDecoration(
         color: colors.error.withValues(alpha: 0.07),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: TasteHubRadii.fieldBorder,
         border: Border.all(color: colors.error.withValues(alpha: 0.25)),
       ),
       child: Row(
@@ -946,54 +373,12 @@ class _ErrorBanner extends StatelessWidget {
           Expanded(
             child: Text(
               message,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: colors.error),
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: colors.error),
             ),
           ),
           TextButton(onPressed: onRetry, child: const Text('Retry')),
         ],
-      ),
-    );
-  }
-}
-
-class _ProofThumb extends StatelessWidget {
-  const _ProofThumb({required this.imageUrl, required this.size});
-
-  final String imageUrl;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.tasteHubColors;
-    final fallback = Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: colors.field,
-        borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: colors.line),
-      ),
-      child: Icon(
-        Icons.photo_library_outlined,
-        size: size * 0.45,
-        color: colors.muted,
-      ),
-    );
-
-    if (imageUrl.isEmpty) return fallback;
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(9),
-      child: Image.network(
-        imageUrl,
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => fallback,
-        loadingBuilder: (context, child, progress) =>
-            progress == null ? child : fallback,
       ),
     );
   }

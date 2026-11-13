@@ -1,9 +1,9 @@
 // ============================================================
 //  dish_screen.dart - one dish and its ranked recipes
 //
-//  Ranking is done by utils/ranking.dart with the same rules as the
-//  server: average desc, rating count desc, newest first, unrated
-//  recipes last and marked "New".
+//  Owns: the dish header, the "Best rated first" explainer and the recipe
+//  list. Ranking itself is utils/ranking.dart, with the same rules as the
+//  server: average desc, rating count desc, newest first, unrated last.
 // ============================================================
 
 import 'package:flutter/material.dart';
@@ -56,8 +56,7 @@ class _DishScreenState extends State<DishScreen> {
   List<Recipe> _forThisDish(Iterable<Recipe> recipes) {
     return rankRecipes(
       recipes.where(
-        (recipe) =>
-            recipe.dish.toLowerCase() == widget.dish.toLowerCase(),
+        (recipe) => recipe.dish.toLowerCase() == widget.dish.toLowerCase(),
       ),
     );
   }
@@ -104,10 +103,8 @@ class _DishScreenState extends State<DishScreen> {
   Future<void> _addRecipe() async {
     final changed = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
-        builder: (_) => RecipeFormScreen(
-          api: widget.api,
-          initialDish: widget.dish,
-        ),
+        builder: (_) =>
+            RecipeFormScreen(api: widget.api, initialDish: widget.dish),
       ),
     );
     if (!mounted) return;
@@ -116,14 +113,16 @@ class _DishScreenState extends State<DishScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.tasteHubColors;
+    final compact = MediaQuery.sizeOf(context).width < 640;
+    final horizontal = compact ? TasteHubSpacing.lg : TasteHubSpacing.xl;
 
     return Scaffold(
       appBar: AppBar(title: Text(widget.dish)),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _addRecipe,
+        tooltip: 'Add a recipe to ${widget.dish}',
         icon: const Icon(Icons.add_rounded),
-        label: Text('Add to ${widget.dish}'),
+        label: const Text('Add recipe'),
       ),
       body: Center(
         child: ConstrainedBox(
@@ -131,7 +130,7 @@ class _DishScreenState extends State<DishScreen> {
           child: RefreshIndicator(
             onRefresh: () => _load(showSpinner: false),
             child: _loading && _recipes.isEmpty
-                ? const LoadingView()
+                ? const LoadingView(message: 'Loading recipes...')
                 : _error != null && _recipes.isEmpty
                 ? ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
@@ -151,36 +150,43 @@ class _DishScreenState extends State<DishScreen> {
                   )
                 : ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 110),
+                    padding: EdgeInsets.fromLTRB(
+                      horizontal,
+                      TasteHubSpacing.sm,
+                      horizontal,
+                      110,
+                    ),
                     children: [
                       _DishHeader(
                         dish: widget.dish,
                         recipes: _recipes,
-                        resolveImage: widget.api.resolveMediaUrl,
+                        resolveMediaUrl: widget.api.resolveMediaUrl,
                       ),
-                      const SizedBox(height: 18),
+                      const SizedBox(height: TasteHubSpacing.lg),
                       if (_recipes.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 40),
-                          child: Text(
-                            'No recipes in this dish yet.',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodyMedium?.copyWith(color: colors.muted),
+                        SizedBox(
+                          height: 300,
+                          child: StatusView(
+                            icon: Icons.ramen_dining_outlined,
+                            title: 'No recipes in ${widget.dish} yet',
+                            message:
+                                'Add the first one and it will appear at the '
+                                'top of this dish.',
+                            actionLabel: 'Add recipe',
+                            actionIcon: Icons.add_rounded,
+                            onAction: _addRecipe,
                           ),
                         )
                       else ...[
-                        Text(
-                          'Ranked by average rating, then number of ratings.',
-                          style: Theme.of(
-                            context,
-                          ).textTheme.bodySmall?.copyWith(color: colors.muted),
-                        ),
-                        const SizedBox(height: 12),
+                        const _RankingExplainer(),
+                        const SizedBox(height: TasteHubSpacing.md),
                         for (var i = 0; i < _recipes.length; i++)
                           Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
+                            padding: EdgeInsets.only(
+                              bottom: i == _recipes.length - 1
+                                  ? 0
+                                  : TasteHubSpacing.md,
+                            ),
                             child: _RecipeRow(
                               recipe: _recipes[i],
                               rank: _recipes[i].isRated ? i + 1 : 0,
@@ -200,27 +206,59 @@ class _DishScreenState extends State<DishScreen> {
   }
 }
 
+class _RankingExplainer extends StatelessWidget {
+  const _RankingExplainer();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tasteHubColors;
+
+    return Row(
+      children: [
+        Icon(Icons.sort_rounded, size: 16, color: colors.muted),
+        const SizedBox(width: 6),
+        Text(
+          'Best rated first',
+          style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: colors.ink, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(width: 4),
+        Tooltip(
+          message:
+              'Sorted by average rating, then by number of ratings. '
+              'New recipes without ratings come last.',
+          child: Icon(
+            Icons.info_outline_rounded,
+            size: 15,
+            color: colors.muted,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _DishHeader extends StatelessWidget {
   const _DishHeader({
     required this.dish,
     required this.recipes,
-    required this.resolveImage,
+    required this.resolveMediaUrl,
   });
 
   final String dish;
   final List<Recipe> recipes;
-  final String Function(String) resolveImage;
+  final String Function(String) resolveMediaUrl;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tasteHubColors;
     final top = recipes.isEmpty ? null : recipes.first;
-    final rated = top != null && top.isRated;
+    final compact = MediaQuery.sizeOf(context).width < 640;
 
     return Container(
       decoration: BoxDecoration(
         color: colors.card,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: TasteHubRadii.heroBorder,
         border: Border.all(color: colors.line),
       ),
       clipBehavior: Clip.antiAlias,
@@ -228,49 +266,53 @@ class _DishHeader extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           RecipeThumbnail(
-            imageRef: top == null ? '' : resolveImage(top.imageRef),
+            imageRef: top == null ? '' : resolveMediaUrl(top.imageRef),
             dish: dish,
             title: dish,
-            height: 220,
+            height: compact ? 190 : 220,
           ),
           Padding(
-            padding: const EdgeInsets.all(22),
+            padding: const EdgeInsets.all(TasteHubSpacing.xl),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  dish,
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                const SizedBox(height: 7),
+                Text(dish, style: Theme.of(context).textTheme.headlineMedium),
+                const SizedBox(height: 6),
                 Wrap(
-                  spacing: 18,
-                  runSpacing: 8,
+                  spacing: TasteHubSpacing.lg,
+                  runSpacing: TasteHubSpacing.sm,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
-                      '${recipes.length} recipe${recipes.length == 1 ? '' : 's'}',
+                      '${recipes.length} recipe'
+                      '${recipes.length == 1 ? '' : 's'}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
-                    if (rated)
+                    if (top != null && top.isRated)
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          RatingStars(value: top.averageRating, size: 18),
-                          const SizedBox(width: 8),
+                          RatingStars(value: top.averageRating, size: 17),
+                          const SizedBox(width: 7),
                           Text(
                             '${top.averageRating.toStringAsFixed(1)} from '
-                            '${top.ratingCount} rating${top.ratingCount == 1 ? '' : 's'}',
-                            style: Theme.of(context).textTheme.bodySmall,
+                            '${top.ratingCount} rating'
+                            '${top.ratingCount == 1 ? '' : 's'}',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: colors.ink,
+                                  fontWeight: FontWeight.w600,
+                                ),
                           ),
                         ],
                       )
                     else
                       Text(
-                        'No ratings yet',
-                        style: Theme.of(
-                          context,
-                        ).textTheme.bodySmall?.copyWith(color: colors.success),
+                        'No ratings yet - be the first',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colors.success,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                   ],
                 ),
@@ -302,7 +344,7 @@ class _RecipeRow extends StatelessWidget {
     final isTop = rank == 1;
     final time = recipe.cookingTime > 0
         ? '${recipe.cookingTime} min'
-        : 'No time set';
+        : 'Time not set';
 
     return Material(
       color: colors.card,
@@ -317,7 +359,7 @@ class _RecipeRow extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(TasteHubSpacing.md),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -331,16 +373,18 @@ class _RecipeRow extends StatelessWidget {
                   height: 92,
                 ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: TasteHubSpacing.md),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Wrap(
+                      spacing: 7,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         _RankBadge(rank: rank, isTop: isTop),
-                        if (isTop) ...[
-                          const SizedBox(width: 7),
+                        if (isTop)
                           Text(
                             'Top pick',
                             style: TextStyle(
@@ -350,17 +394,16 @@ class _RecipeRow extends StatelessWidget {
                               letterSpacing: 0.2,
                             ),
                           ),
-                        ],
                       ],
                     ),
-                    const SizedBox(height: 7),
+                    const SizedBox(height: 6),
                     Text(
                       recipe.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
-                    const SizedBox(height: 5),
+                    const SizedBox(height: 4),
                     Text(
                       'by ${recipe.ownerName.isEmpty ? 'unknown' : recipe.ownerName}'
                       ' · $time',
@@ -384,10 +427,13 @@ class _RecipeRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 4),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: colors.muted,
-                size: 22,
+              Padding(
+                padding: const EdgeInsets.only(top: 32),
+                child: Icon(
+                  Icons.chevron_right_rounded,
+                  color: colors.muted,
+                  size: 22,
+                ),
               ),
             ],
           ),

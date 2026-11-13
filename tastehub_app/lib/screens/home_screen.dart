@@ -170,34 +170,54 @@ class _HomeScreenState extends State<HomeScreen> {
           constraints: const BoxConstraints(maxWidth: 560),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 4,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Add a recipe',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Write it yourself, or let AI create a draft to review.',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
                   ),
-                  leading: const _SheetIcon(icon: Icons.edit_note_rounded),
-                  title: const Text('Write it manually'),
-                  subtitle: const Text(
-                    'Choose an existing dish or create a new one.',
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
+                    leading: const _SheetIcon(icon: Icons.edit_note_rounded),
+                    title: const Text('Write it manually'),
+                    subtitle: const Text(
+                      'Choose an existing dish or create a new one.',
+                    ),
+                    onTap: () => Navigator.of(context).pop('manual'),
                   ),
-                  onTap: () => Navigator.of(context).pop('manual'),
-                ),
-                ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 4,
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
+                    leading: const _SheetIcon(icon: Icons.auto_awesome_rounded),
+                    title: const Text('Describe it with AI'),
+                    subtitle: const Text(
+                      'Explain the dish in your own words and review the draft Gemini writes.',
+                    ),
+                    onTap: () => Navigator.of(context).pop('ai'),
                   ),
-                  leading: const _SheetIcon(icon: Icons.auto_awesome_rounded),
-                  title: const Text('Describe it with AI'),
-                  subtitle: const Text(
-                    'Explain the dish in your own words and review the draft Gemini writes.',
-                  ),
-                  onTap: () => Navigator.of(context).pop('ai'),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -227,6 +247,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showAddOptions,
+        tooltip: 'Add a recipe',
         icon: const Icon(Icons.add_rounded),
         label: const Text('Add recipe'),
       ),
@@ -282,9 +303,8 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 7),
               Text(
                 'Pick a dish, then pick the best recipe.',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: colors.muted),
+                style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: colors.muted),
               ),
             ],
           ),
@@ -376,7 +396,7 @@ class _HomeScreenState extends State<HomeScreen> {
           },
           textInputAction: TextInputAction.search,
           decoration: InputDecoration(
-            hintText: 'Search recipes, dishes or ingredients...',
+            hintText: 'Search dishes, recipes or ingredients...',
             prefixIcon: const Icon(Icons.search_rounded, size: 21),
             suffixIcon: value.text.isEmpty
                 ? null
@@ -433,11 +453,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            searchField,
-            const SizedBox(height: 12),
-            filters,
-          ],
+          children: [searchField, const SizedBox(height: 12), filters],
         );
       },
     );
@@ -479,7 +495,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final groups = _groups;
 
     if (_loading && _recipes.isEmpty) {
-      return const LoadingView();
+      return const LoadingView(message: 'Loading dishes...');
     }
 
     if (_error != null && _recipes.isEmpty) {
@@ -494,25 +510,44 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (groups.isEmpty) {
+      final searching = _query.isNotEmpty;
+      final title = searching
+          ? 'No matching recipes'
+          : _myRecipesOnly
+          ? 'No recipes of your own yet'
+          : 'No recipes yet';
+      final message = searching
+          ? 'Nothing matched "$_query". Try a shorter or different word.'
+          : _myRecipesOnly
+          ? 'Add one with the button below, or switch back to all dishes.'
+          : 'Add the first recipe to get the demo started.';
+
       return RefreshIndicator(
         onRefresh: () => _load(showSpinner: false),
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: StatusView(
-                icon: Icons.ramen_dining_outlined,
-                title: _query.isEmpty
-                    ? _myRecipesOnly
-                          ? 'No recipes of your own yet'
-                          : 'No recipes yet'
-                    : 'No matching recipes',
-                message: _query.isEmpty
-                    ? _myRecipesOnly
-                          ? 'Add one with the button below, or switch to All dishes.'
-                          : 'Add the first recipe with the button below.'
-                    : 'Nothing matched "$_query". Try a shorter or different word.',
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.only(top: TasteHubSpacing.lg),
+                child: StatusView(
+                  icon: searching
+                      ? Icons.search_off_rounded
+                      : Icons.ramen_dining_outlined,
+                  title: title,
+                  message: message,
+                  actionLabel: searching ? 'Clear search' : 'Add recipe',
+                  actionIcon: searching
+                      ? Icons.close_rounded
+                      : Icons.add_rounded,
+                  onAction: searching ? _clearSearch : _showAddOptions,
+                  secondaryActionLabel: !searching && _myRecipesOnly
+                      ? 'Show all dishes'
+                      : null,
+                  onSecondaryAction: !searching && _myRecipesOnly
+                      ? _toggleMyRecipes
+                      : null,
+                ),
               ),
             ),
           ],
@@ -532,18 +567,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
           return GridView.builder(
             physics: const AlwaysScrollableScrollPhysics(),
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             padding: const EdgeInsets.only(top: 2, bottom: 96),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: columns,
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
-              mainAxisExtent: 292,
+              mainAxisExtent: 300,
             ),
             itemCount: groups.length,
             itemBuilder: (context, index) {
               return DishCard(
                 group: groups[index],
-                resolveImage: widget.api.resolveMediaUrl,
+                resolveMediaUrl: widget.api.resolveMediaUrl,
+                searchQuery: _query,
                 onTap: () => _openDish(groups[index]),
               );
             },
@@ -579,9 +616,7 @@ class _FilterChip extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: selected ? colors.accent : colors.line,
-            ),
+            border: Border.all(color: selected ? colors.accent : colors.line),
           ),
           child: Text(
             label,
@@ -620,10 +655,7 @@ class _ThemeMenu extends StatelessWidget {
           value: ThemeMode.light,
           child: Text('Light theme'),
         ),
-        CheckedPopupMenuItem(
-          value: ThemeMode.dark,
-          child: Text('Dark theme'),
-        ),
+        CheckedPopupMenuItem(value: ThemeMode.dark, child: Text('Dark theme')),
       ],
     );
   }

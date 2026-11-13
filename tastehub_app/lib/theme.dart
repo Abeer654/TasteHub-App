@@ -13,6 +13,57 @@
 
 import 'package:flutter/material.dart';
 
+/// Shared spacing scale. Screens should prefer these values over one-off
+/// numbers so the revamp stays visually consistent.
+abstract final class TasteHubSpacing {
+  static const double xs = 4;
+  static const double sm = 8;
+  static const double md = 12;
+  static const double lg = 16;
+  static const double xl = 20;
+  static const double xxl = 24;
+  static const double xxxl = 32;
+
+  /// Gap between the main sections of a scrolling screen.
+  static const double section = 18;
+}
+
+/// Shared corner radii. Cards, fields and pills can now match across screens.
+abstract final class TasteHubRadii {
+  static const double field = 14;
+  static const double card = 20;
+  static const double hero = 24;
+  static const double button = 13;
+
+  static const BorderRadius fieldBorder = BorderRadius.all(
+    Radius.circular(field),
+  );
+  static const BorderRadius cardBorder = BorderRadius.all(
+    Radius.circular(card),
+  );
+  static const BorderRadius heroBorder = BorderRadius.all(
+    Radius.circular(hero),
+  );
+  static const BorderRadius pill = BorderRadius.all(Radius.circular(999));
+}
+
+/// Layout helpers shared by the scrolling screens.
+abstract final class TasteHubLayout {
+  static const double contentWidth = 920;
+  static const double wideContentWidth = 1180;
+
+  /// Comfortable page padding: tighter on phones, roomier on desktop.
+  static EdgeInsets pagePadding(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < 640;
+    return EdgeInsets.fromLTRB(
+      compact ? TasteHubSpacing.lg : TasteHubSpacing.xxl,
+      TasteHubSpacing.sm,
+      compact ? TasteHubSpacing.lg : TasteHubSpacing.xxl,
+      TasteHubSpacing.xxxl,
+    );
+  }
+}
+
 @immutable
 class TasteHubColors extends ThemeExtension<TasteHubColors> {
   const TasteHubColors({
@@ -163,6 +214,14 @@ ThemeData buildTasteHubTheme(Brightness brightness) {
       foregroundColor: colors.ink,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
+      centerTitle: false,
+      toolbarHeight: 64,
+      titleTextStyle: TextStyle(
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.2,
+        color: colors.ink,
+      ),
     ),
     textTheme: TextTheme(
       displaySmall: TextStyle(
@@ -178,14 +237,27 @@ ThemeData buildTasteHubTheme(Brightness brightness) {
         letterSpacing: -0.8,
         color: colors.ink,
       ),
+      headlineSmall: TextStyle(
+        fontSize: 22,
+        fontWeight: FontWeight.w800,
+        letterSpacing: -0.4,
+        color: colors.ink,
+      ),
       titleLarge: TextStyle(
         fontSize: 20,
         fontWeight: FontWeight.w700,
+        letterSpacing: -0.3,
         color: colors.ink,
       ),
       titleMedium: TextStyle(
         fontSize: 16,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.1,
+        color: colors.ink,
+      ),
+      titleSmall: TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w700,
         color: colors.ink,
       ),
       bodyLarge: TextStyle(fontSize: 16, height: 1.55, color: colors.ink),
@@ -197,28 +269,40 @@ ThemeData buildTasteHubTheme(Brightness brightness) {
         letterSpacing: 0.1,
         color: colors.ink,
       ),
+      labelSmall: TextStyle(
+        fontSize: 10.5,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 1.1,
+        color: colors.muted,
+      ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: colors.card,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      fillColor: colors.field,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
       hintStyle: TextStyle(color: colors.muted),
       labelStyle: TextStyle(color: colors.muted),
+      prefixIconColor: colors.muted,
+      suffixIconColor: colors.muted,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: TasteHubRadii.fieldBorder,
         borderSide: BorderSide(color: colors.line),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: TasteHubRadii.fieldBorder,
         borderSide: BorderSide(color: colors.line),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: TasteHubRadii.fieldBorder,
         borderSide: BorderSide(color: colors.accent, width: 1.6),
       ),
       errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: TasteHubRadii.fieldBorder,
         borderSide: BorderSide(color: colors.error),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: TasteHubRadii.fieldBorder,
+        borderSide: BorderSide(color: colors.error, width: 1.6),
       ),
     ),
     snackBarTheme: SnackBarThemeData(
@@ -231,7 +315,9 @@ ThemeData buildTasteHubTheme(Brightness brightness) {
     dialogTheme: DialogThemeData(
       backgroundColor: colors.card,
       surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(TasteHubRadii.hero),
+      ),
     ),
     bottomSheetTheme: BottomSheetThemeData(
       backgroundColor: colors.card,
@@ -245,17 +331,65 @@ ThemeData buildTasteHubTheme(Brightness brightness) {
       style: FilledButton.styleFrom(
         backgroundColor: colors.accent,
         foregroundColor: colors.onAccent,
+        minimumSize: const Size(0, 46),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(TasteHubRadii.button),
+        ),
+        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: colors.ink,
+        minimumSize: const Size(0, 44),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        side: BorderSide(color: colors.line),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(TasteHubRadii.button),
+        ),
+        textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+      ),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        foregroundColor: colors.accent,
+        minimumSize: const Size(0, 40),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
       ),
     ),
     floatingActionButtonTheme: FloatingActionButtonThemeData(
       backgroundColor: colors.accent,
       foregroundColor: colors.onAccent,
+      elevation: 2,
+      extendedTextStyle: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w700,
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(TasteHubRadii.button + 4),
+      ),
     ),
     progressIndicatorTheme: ProgressIndicatorThemeData(color: colors.accent),
     chipTheme: ChipThemeData(
       backgroundColor: colors.card,
       side: BorderSide(color: colors.line),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
       labelStyle: TextStyle(color: colors.ink),
+    ),
+    tooltipTheme: TooltipThemeData(
+      waitDuration: const Duration(milliseconds: 500),
+      decoration: BoxDecoration(
+        color: colors.ink,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      textStyle: TextStyle(
+        color: colors.background,
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+      ),
     ),
   );
 }

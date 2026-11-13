@@ -18,6 +18,7 @@ Map<String, dynamic> recipeSummaryJson({
   int ratingCount = 2,
   int myRating = 5,
   String imageRef = '',
+  String myRatingProofImageRef = '',
   String? createdAt = '2026-10-20T18:00:00Z',
 }) {
   return {
@@ -33,7 +34,7 @@ Map<String, dynamic> recipeSummaryJson({
     'averageRating': averageRating,
     'ratingCount': ratingCount,
     'myRating': myRating,
-    'myRatingProofImageRef': '',
+    'myRatingProofImageRef': myRatingProofImageRef,
     'createdAt': createdAt,
     'updatedAt': null,
   };
@@ -86,12 +87,7 @@ Map<String, dynamic> recipeDetailJson([Map<String, dynamic>? summary]) {
     'ingredients': ['rice', 'chicken', 'yogurt'],
     'steps': ['Marinate the chicken.', 'Layer with rice and cook.'],
     'ratings': [
-      {
-        'userId': 1,
-        'userName': 'junaid',
-        'stars': 5,
-        'proofImageRef': '',
-      },
+      {'userId': 1, 'userName': 'junaid', 'stars': 5, 'proofImageRef': ''},
       {
         'userId': 2,
         'userName': 'guest',
@@ -246,9 +242,7 @@ ApiClient fakeApiClient({
         return jsonResponse(404, {'error': 'Recipe not found'});
       }
       final body = jsonDecode(request.body) as Map<String, dynamic>;
-      recipe.addAll(
-        body.map((key, value) => MapEntry(key, value)),
-      );
+      recipe.addAll(body.map((key, value) => MapEntry(key, value)));
       recipe['updatedAt'] = '2026-11-12T12:00:00Z';
       return jsonResponse(200, recipeDetailJson(recipe));
     }

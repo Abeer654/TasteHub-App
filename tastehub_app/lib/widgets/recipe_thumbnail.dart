@@ -27,6 +27,7 @@ class RecipeThumbnail extends StatelessWidget {
     this.width,
     this.height,
     this.borderRadius = BorderRadius.zero,
+    this.errorMessage,
   });
 
   final String imageRef;
@@ -35,6 +36,10 @@ class RecipeThumbnail extends StatelessWidget {
   final double? width;
   final double? height;
   final BorderRadius borderRadius;
+
+  /// When set, a failed network image shows this message instead of the
+  /// letter placeholder. Small thumbnails leave it null to stay compact.
+  final String? errorMessage;
 
   bool get _isNetworkImage =>
       imageRef.startsWith('http://') || imageRef.startsWith('https://');
@@ -50,7 +55,7 @@ class RecipeThumbnail extends StatelessWidget {
             ? Image.network(
                 imageRef,
                 fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => _placeholder(),
+                errorBuilder: (_, _, _) => _placeholder(broken: true),
                 loadingBuilder: (context, child, progress) {
                   if (progress == null) return child;
                   return _placeholder();
@@ -61,7 +66,7 @@ class RecipeThumbnail extends StatelessWidget {
     );
   }
 
-  Widget _placeholder() {
+  Widget _placeholder({bool broken = false}) {
     final seed = (dish.isNotEmpty ? dish : title).codeUnits.fold<int>(
       0,
       (total, unit) => total + unit,
@@ -92,15 +97,39 @@ class RecipeThumbnail extends StatelessWidget {
             ),
           ),
           Center(
-            child: Text(
-              initial,
-              style: TextStyle(
-                fontSize: 64,
-                fontWeight: FontWeight.w800,
-                color: Colors.white.withValues(alpha: 0.72),
-                height: 1,
-              ),
-            ),
+            child: broken && errorMessage != null
+                ? Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.broken_image_outlined,
+                          size: 44,
+                          color: Colors.white.withValues(alpha: 0.82),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          errorMessage!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.9),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : Text(
+                    initial,
+                    style: TextStyle(
+                      fontSize: 64,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white.withValues(alpha: 0.72),
+                      height: 1,
+                    ),
+                  ),
           ),
         ],
       ),

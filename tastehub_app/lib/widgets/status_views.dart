@@ -13,7 +13,10 @@ class StatusView extends StatelessWidget {
     required this.title,
     required this.message,
     this.actionLabel,
+    this.actionIcon = Icons.refresh_rounded,
     this.onAction,
+    this.secondaryActionLabel,
+    this.onSecondaryAction,
     this.isError = false,
   });
 
@@ -21,7 +24,10 @@ class StatusView extends StatelessWidget {
   final String title;
   final String message;
   final String? actionLabel;
+  final IconData actionIcon;
   final VoidCallback? onAction;
+  final String? secondaryActionLabel;
+  final VoidCallback? onSecondaryAction;
   final bool isError;
 
   @override
@@ -67,16 +73,28 @@ class StatusView extends StatelessWidget {
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: colors.muted),
+                style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: colors.muted),
               ),
               if (actionLabel != null && onAction != null) ...[
                 const SizedBox(height: 20),
-                FilledButton.icon(
-                  onPressed: onAction,
-                  icon: const Icon(Icons.refresh_rounded, size: 18),
-                  label: Text(actionLabel!),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    FilledButton.icon(
+                      onPressed: onAction,
+                      icon: Icon(actionIcon, size: 18),
+                      label: Text(actionLabel!),
+                    ),
+                    if (secondaryActionLabel != null &&
+                        onSecondaryAction != null)
+                      OutlinedButton(
+                        onPressed: onSecondaryAction,
+                        child: Text(secondaryActionLabel!),
+                      ),
+                  ],
                 ),
               ],
             ],

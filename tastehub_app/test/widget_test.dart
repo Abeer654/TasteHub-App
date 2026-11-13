@@ -23,22 +23,24 @@ Future<_Harness> _pumpApp(
   String? username,
   String password = 'tastehub',
   List<http.Request>? requests,
+  List<Map<String, dynamic>>? recipes,
+  Map<String, Object> prefs = const {},
 }) async {
-  SharedPreferences.setMockInitialValues({});
-  final prefs = await SharedPreferences.getInstance();
-  final api = fakeApiClient(requests: requests);
-  final session = SessionController(api: api, prefs: prefs);
+  SharedPreferences.setMockInitialValues(prefs);
+  final prefsStore = await SharedPreferences.getInstance();
+  final api = fakeApiClient(requests: requests, recipes: recipes);
+  final session = SessionController(api: api, prefs: prefsStore);
 
   await session.restore();
   if (username != null) await session.login(username, password);
 
-  final theme = ThemeController(prefs: prefs);
+  final theme = ThemeController(prefs: prefsStore);
   await tester.pumpWidget(
     TasteHubApp(api: api, session: session, themeController: theme),
   );
   await tester.pumpAndSettle();
 
-  return (api: api, session: session, theme: theme, prefs: prefs);
+  return (api: api, session: session, theme: theme, prefs: prefsStore);
 }
 
 Future<void> _openDish(WidgetTester tester, String dish) async {
@@ -55,7 +57,9 @@ Future<void> _openRecipe(WidgetTester tester, String title) async {
 }
 
 void main() {
-  testWidgets('opens on login and signs in with a demo account', (tester) async {
+  testWidgets('opens on login and signs in with a demo account', (
+    tester,
+  ) async {
     await _pumpApp(tester);
 
     expect(find.text('Welcome back'), findsOneWidget);
@@ -80,8 +84,7 @@ void main() {
     expect(find.text('Leaderboard'), findsNothing);
     await _openDish(tester, 'Biryani');
 
-    expect(find.text('Ranked by average rating, then number of ratings.'),
-        findsOneWidget);
+    expect(find.text('Best rated first'), findsOneWidget);
     expect(find.text('#1'), findsOneWidget);
     expect(find.text('#2'), findsOneWidget);
     expect(find.text('Top pick'), findsOneWidget);
@@ -117,17 +120,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('2 results in 1 dish'), findsOneWidget);
-    expect(find.text('Top: Beef Biryani'), findsOneWidget);
+    expect(
+      find.text('2 matches: Beef Biryani, Chicken Biryani'),
+      findsOneWidget,
+    );
     expect(find.text('Karahi'), findsNothing);
   });
 
   testWidgets('opens a recipe and rates it', (tester) async {
     final requests = <http.Request>[];
-    await _pumpApp(
-      tester,
-      username: 'junaid',
-      requests: requests,
-    );
+    await _pumpApp(tester, username: 'junaid', requests: requests);
 
     await _openDish(tester, 'Biryani');
     await _openRecipe(tester, 'Chicken Biryani');
@@ -135,8 +137,12 @@ void main() {
     expect(find.text('Ingredients'), findsOneWidget);
     expect(find.text('Cooking steps'), findsOneWidget);
     expect(find.text('Marinate the chicken.'), findsOneWidget);
+    expect(find.text('Your rating'), findsOneWidget);
 
-    await tester.tap(find.byKey(const ValueKey('star-4')));
+    final star = find.byKey(const ValueKey('star-4'));
+    await tester.ensureVisible(star);
+    await tester.pumpAndSettle();
+    await tester.tap(star);
     await tester.pumpAndSettle();
 
     expect(find.text('Rated 4 out of 5.'), findsOneWidget);
@@ -156,7 +162,9 @@ void main() {
     await _openRecipe(tester, 'Chicken Biryani');
 
     expect(find.byTooltip('Edit recipe'), findsOneWidget);
-    expect(find.byTooltip('Delete recipe'), findsOneWidget);
+    await tester.tap(find.byTooltip('More actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete recipe'), findsOneWidget);
   });
 
   testWidgets('a guest can rate but cannot edit or delete', (tester) async {
@@ -166,7 +174,7 @@ void main() {
 
     expect(find.byKey(const ValueKey('star-4')), findsOneWidget);
     expect(find.byTooltip('Edit recipe'), findsNothing);
-    expect(find.byTooltip('Delete recipe'), findsNothing);
+    expect(find.byTooltip('More actions'), findsNothing);
   });
 
   testWidgets('creates a recipe through the AI draft flow', (tester) async {
@@ -190,15 +198,165 @@ void main() {
 
     expect(find.text('AI draft - review before saving'), findsOneWidget);
     expect(find.text('Chicken Biryani'), findsWidgets);
+    expect(find.text('Recipe photo'), findsOneWidget);
+    expect(find.text('Save recipe'), findsOneWidget);
 
-    final saveButton = find.text('Save recipe');
-    await tester.ensureVisible(saveButton);
-    await tester.pumpAndSettle();
-    await tester.tap(saveButton);
+    await tester.tap(find.text('Save recipe'));
     await tester.pumpAndSettle();
 
     expect(find.text('Recipe saved.'), findsOneWidget);
     expect(find.text('2 dishes · 5 recipes'), findsOneWidget);
+  });
+
+  testWidgets('shows the recipe title and keeps photo concepts separate', (
+    tester,
+  ) async {
+    await _pumpApp(tester, username: 'junaid');
+    await _openDish(tester, 'Biryani');
+    await _openRecipe(tester, 'Chicken Biryani');
+
+    expect(
+      find.descendant(
+        of: find.byType(AppBar),
+        matching: find.text('Chicken Biryani'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('No recipe photo yet - add one above'), findsOneWidget);
+    expect(find.text('Add rating photo'), findsOneWidget);
+    expect(find.text('Your rating photo'), findsNothing);
+
+    final addRatingPhoto = find.text('Add rating photo');
+    await tester.ensureVisible(addRatingPhoto);
+    await tester.pumpAndSettle();
+    await tester.tap(addRatingPhoto);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Your rating photo'), findsOneWidget);
+    expect(find.textContaining('not as the recipe photo'), findsWidgets);
+  });
+
+  testWidgets('shows your rating photo once and hides it from other ratings', (
+    tester,
+  ) async {
+    final recipes = demoRecipeSummaries();
+    recipes[0]['myRatingProofImageRef'] = 'https://example.com/my-rating.jpg';
+    await _pumpApp(tester, username: 'junaid', recipes: recipes);
+    await _openDish(tester, 'Biryani');
+    await _openRecipe(tester, 'Chicken Biryani');
+
+    expect(find.text('Your rating photo'), findsOneWidget);
+    expect(find.text('Change rating photo'), findsOneWidget);
+    expect(find.text('Other ratings'), findsOneWidget);
+    expect(find.byTooltip('Open rating photo'), findsOneWidget);
+  });
+
+  testWidgets('warns before discarding a dirty recipe form', (tester) async {
+    await _pumpApp(tester, username: 'junaid');
+
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Write it manually'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Recipe details'), findsOneWidget);
+    expect(find.text('Recipe photo'), findsOneWidget);
+    expect(find.text('You have unsaved changes'), findsNothing);
+
+    await tester.enterText(find.byType(TextFormField).first, 'My Test Curry');
+    await tester.pumpAndSettle();
+    expect(find.text('You have unsaved changes'), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text('Discard changes?'), findsOneWidget);
+
+    await tester.tap(find.text('Keep editing'));
+    await tester.pumpAndSettle();
+    expect(find.text('Discard changes?'), findsNothing);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Discard'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Recipe details'), findsNothing);
+    expect(find.text('2 dishes · 4 recipes'), findsOneWidget);
+  });
+
+  testWidgets(
+    'phone-width dark mode renders detail and form without overflow',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await _pumpApp(tester, username: 'junaid', prefs: {'theme_mode': 'dark'});
+      expect(
+        Theme.of(tester.element(find.byType(Scaffold))).brightness,
+        Brightness.dark,
+      );
+
+      await _openDish(tester, 'Biryani');
+      await _openRecipe(tester, 'Chicken Biryani');
+      expect(find.text('Your rating'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('Watch on YouTube'));
+      await tester.pumpAndSettle();
+      expect(find.text('Watch on YouTube'), findsOneWidget);
+
+      final addRatingPhoto = find.text('Add rating photo');
+      await tester.ensureVisible(addRatingPhoto);
+      await tester.pumpAndSettle();
+      await tester.tap(addRatingPhoto);
+      await tester.pumpAndSettle();
+      expect(find.text('Your rating photo'), findsOneWidget);
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(FloatingActionButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Write it manually'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Recipe details'), findsOneWidget);
+      expect(find.text('Save recipe'), findsOneWidget);
+
+      await tester.drag(
+        find.byType(SingleChildScrollView),
+        const Offset(0, -1200),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Save recipe'), findsOneWidget);
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.text('Recipe details'), findsNothing);
+    },
+  );
+
+  testWidgets('empty search offers a clear action', (tester) async {
+    await _pumpApp(tester, username: 'junaid');
+
+    await tester.enterText(find.byType(TextField), 'zzz');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No matching recipes'), findsOneWidget);
+    expect(find.text('Clear search'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Clear search'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Clear search'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 dishes · 4 recipes'), findsOneWidget);
   });
 
   testWidgets('switches to dark mode and saves the choice', (tester) async {
