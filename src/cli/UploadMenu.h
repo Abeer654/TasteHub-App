@@ -190,6 +190,20 @@ int askCookingTime(){
     }
 }
 
+// ------------------------------------------------------------
+//  Upload / edit photo fields
+// ------------------------------------------------------------
+
+void askMediaFields(string &imageRef, string &youtubeUrl){
+    cout << "Image URL or /uploads/... path (optional, press Enter to skip): ";
+    string image = trimSpaces(readLine());
+    if(!image.empty()) imageRef = image;
+
+    cout << "YouTube URL (optional, press Enter to skip): ";
+    string youtube = trimSpaces(readLine());
+    if(!youtube.empty()) youtubeUrl = youtube;
+}
+
 void uploadRecipe(RecipeDatabase &db, int userId, string username){
     if(!db.load()){
         cout << "Stopped, so your saved recipes are not overwritten.\n";
@@ -235,6 +249,10 @@ void uploadRecipe(RecipeDatabase &db, int userId, string username){
     recipe.setSteps(askList("Enter steps one by one. Type 'done' when finished.", "step", true));
     recipe.setCookingTime(askCookingTime());
 
+    string imageRef;
+    string youtubeUrl;
+    askMediaFields(imageRef, youtubeUrl);
+
     // ---------- SAVE (load the newest file first) ----------
     if(!db.load()){
         cout << "Stopped, so your saved recipes are not overwritten.\n";
@@ -263,6 +281,8 @@ void uploadRecipe(RecipeDatabase &db, int userId, string username){
     variant.setOwnerId(userId);              // remembers WHO uploaded it
     variant.autoSetDate();
     variant.getRecipe() = recipe;
+    variant.setImageRef(imageRef);
+    variant.setYoutubeUrl(youtubeUrl);
 
     dish.addVariant(variant);
 
@@ -319,9 +339,11 @@ void editRecipe(RecipeDatabase &db, int userId, string username){
         cout << " 3. Ingredients (type the full list again)\n";
         cout << " 4. Steps (type the full list again)\n";
         cout << " 5. Cooking time\n";
-        cout << " 6. SAVE changes and finish\n";
+        cout << " 6. Image URL or path\n";
+        cout << " 7. YouTube URL\n";
+        cout << " 8. SAVE changes and finish\n";
         cout << " 0. Cancel (throw away changes)\n";
-        int choice = askChoice("Choice: ", 0, 6);
+        int choice = askChoice("Choice: ", 0, 8);
 
         if(choice == 0){
             cout << "Cancelled. Nothing was changed.\n";
@@ -357,6 +379,14 @@ void editRecipe(RecipeDatabase &db, int userId, string username){
             recipe.setCookingTime(askCookingTime());
         }
         else if(choice == 6){
+            cout << "New image URL or /uploads/... path (empty clears it): ";
+            edited.setImageRef(trimSpaces(readLine()));
+        }
+        else if(choice == 7){
+            cout << "New YouTube URL (empty clears it): ";
+            edited.setYoutubeUrl(trimSpaces(readLine()));
+        }
+        else if(choice == 8){
             break;
         }
     }
@@ -392,6 +422,8 @@ void editRecipe(RecipeDatabase &db, int userId, string username){
 
     target.setName(edited.getName());
     target.getRecipe() = edited.getRecipe();
+    target.setImageRef(edited.getImageRef());
+    target.setYoutubeUrl(edited.getYoutubeUrl());
     target.markEdited();
 
     if(db.save()){

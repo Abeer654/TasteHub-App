@@ -10,26 +10,71 @@
                     "id": 1,
                     "name": "Crispy Fries",
                     "ownerId": 1,
-                    "ratings": [],
+                    "ratings": [
+                        {"userId": 1, "stars": 5, "proofImageRef": ""},
+                        {"userId": 2, "stars": 5, "proofImageRef": ""}
+                    ],
                     "recipe": {
-                        "cookingTime": 5,
-                        "ingredients": [
-                            "potato",
-                            "oil",
-                            "spices",
-                            "salt"
-                        ],
-                        "mainIngredient": "Potato And Oil",
+                        "cookingTime": 20,
+                        "ingredients": ["potato", "oil", "salt", "chilli powder"],
+                        "mainIngredient": "potato",
                         "steps": [
-                            "pour oil",
-                            "make it upto 90C",
-                            "fry potato",
-                            "add spices"
+                            "Cut the potatoes into even strips and soak them in cold water.",
+                            "Heat the oil to medium-high and fry the potatoes until pale.",
+                            "Fry a second time until golden and crisp.",
+                            "Toss with salt and chilli powder while hot."
                         ]
                     },
                     "updatedAt": "",
-                    "imageRef": "asset:assets/images/fries.jpg",
+                    "imageRef": "",
                     "youtubeUrl": "https://www.youtube.com/results?search_query=crispy+fries+recipe"
+                },
+                {
+                    "createdAt": "2026-10-12T18:20:00Z",
+                    "id": 7,
+                    "name": "Masala Fries",
+                    "ownerId": 2,
+                    "ratings": [
+                        {"userId": 1, "stars": 4, "proofImageRef": ""},
+                        {"userId": 2, "stars": 5, "proofImageRef": ""}
+                    ],
+                    "recipe": {
+                        "cookingTime": 25,
+                        "ingredients": ["potato", "oil", "garam masala", "red chilli", "coriander"],
+                        "mainIngredient": "potato",
+                        "steps": [
+                            "Fry the potato strips until golden.",
+                            "Mix garam masala, red chilli and salt in a bowl.",
+                            "Toss the hot fries in the spice mix.",
+                            "Finish with chopped coriander."
+                        ]
+                    },
+                    "updatedAt": "",
+                    "imageRef": "",
+                    "youtubeUrl": "https://www.youtube.com/results?search_query=masala+fries+recipe"
+                },
+                {
+                    "createdAt": "2026-10-14T12:10:00Z",
+                    "id": 8,
+                    "name": "Loaded Cheese Fries",
+                    "ownerId": 1,
+                    "ratings": [
+                        {"userId": 1, "stars": 4, "proofImageRef": ""}
+                    ],
+                    "recipe": {
+                        "cookingTime": 30,
+                        "ingredients": ["potato", "cheddar cheese", "milk", "butter", "spring onion"],
+                        "mainIngredient": "potato",
+                        "steps": [
+                            "Bake or fry the potatoes until crisp.",
+                            "Melt butter and stir in the cheese and milk.",
+                            "Pour the cheese sauce over the fries.",
+                            "Top with spring onion and serve immediately."
+                        ]
+                    },
+                    "updatedAt": "",
+                    "imageRef": "",
+                    "youtubeUrl": "https://www.youtube.com/results?search_query=loaded+cheese+fries+recipe"
                 }
             ]
         },
@@ -44,30 +89,70 @@
                     "name": "Hydrabadi Pulao",
                     "ownerId": 1,
                     "ratings": [
-                        {
-                            "stars": 3,
-                            "userId": 1
-                        }
+                        {"userId": 1, "stars": 5, "proofImageRef": ""},
+                        {"userId": 2, "stars": 4, "proofImageRef": ""}
                     ],
                     "recipe": {
-                        "cookingTime": 40,
-                        "ingredients": [
-                            "rice",
-                            "chicken",
-                            "spices",
-                            "garlic paste"
-                        ],
-                        "mainIngredient": "Rice, And Chicken",
+                        "cookingTime": 45,
+                        "ingredients": ["rice", "chicken", "whole spices", "garlic paste", "fried onion"],
+                        "mainIngredient": "rice",
                         "steps": [
-                            "fry onion",
-                            "add garlic paste",
-                            "then make yakni",
-                            "add rices"
+                            "Wash and soak the rice for 20 minutes.",
+                            "Fry onion and garlic paste with whole spices.",
+                            "Add chicken and cook until tender.",
+                            "Add rice and enough water, then cook on low heat."
                         ]
                     },
                     "updatedAt": "",
-                    "imageRef": "asset:assets/images/pulao.jpg",
+                    "imageRef": "",
                     "youtubeUrl": "https://www.youtube.com/results?search_query=hyderabadi+pulao+recipe"
+                },
+                {
+                    "createdAt": "2026-10-13T11:45:00Z",
+                    "id": 9,
+                    "name": "Yakhni Pulao",
+                    "ownerId": 2,
+                    "ratings": [
+                        {"userId": 1, "stars": 5, "proofImageRef": ""},
+                        {"userId": 2, "stars": 5, "proofImageRef": ""}
+                    ],
+                    "recipe": {
+                        "cookingTime": 60,
+                        "ingredients": ["rice", "mutton", "yogurt", "whole spices", "ginger"],
+                        "mainIngredient": "mutton",
+                        "steps": [
+                            "Simmer mutton with whole spices and ginger to make yakhni.",
+                            "Strain the broth and keep the meat aside.",
+                            "Cook rice in the yakhni with yogurt.",
+                            "Layer the mutton in and steam until done."
+                        ]
+                    },
+                    "updatedAt": "",
+                    "imageRef": "",
+                    "youtubeUrl": "https://www.youtube.com/results?search_query=yakhni+pulao+recipe"
+                },
+                {
+                    "createdAt": "2026-10-16T19:05:00Z",
+                    "id": 10,
+                    "name": "Chicken Pulao",
+                    "ownerId": 1,
+                    "ratings": [
+                        {"userId": 1, "stars": 4, "proofImageRef": ""}
+                    ],
+                    "recipe": {
+                        "cookingTime": 40,
+                        "ingredients": ["rice", "chicken", "onion", "cumin", "green chilli"],
+                        "mainIngredient": "chicken",
+                        "steps": [
+                            "Brown the onions with cumin.",
+                            "Add chicken and green chilli and cook through.",
+                            "Add rice and water and bring to a boil.",
+                            "Cover and cook on low heat until the rice is done."
+                        ]
+                    },
+                    "updatedAt": "",
+                    "imageRef": "",
+                    "youtubeUrl": "https://www.youtube.com/results?search_query=chicken+pulao+recipe"
                 }
             ]
         },
@@ -82,62 +167,144 @@
                     "name": "Peshawari Karahi",
                     "ownerId": 1,
                     "ratings": [
-                        {
-                            "stars": 4,
-                            "userId": 1
-                        }
+                        {"userId": 1, "stars": 5, "proofImageRef": ""},
+                        {"userId": 2, "stars": 4, "proofImageRef": ""}
                     ],
                     "recipe": {
                         "cookingTime": 60,
-                        "ingredients": [
-                            "tomato",
-                            "chillies",
-                            "garlic paste",
-                            "salt",
-                            "oil"
-                        ],
-                        "mainIngredient": "Mutton",
+                        "ingredients": ["mutton", "tomato", "green chilli", "garlic paste", "ginger"],
+                        "mainIngredient": "mutton",
                         "steps": [
-                            "add oil",
-                            "fry mutton",
-                            "add chillies and garlic paste",
-                            "then add tomato"
+                            "Heat oil in a karahi and sear the mutton.",
+                            "Add garlic paste, tomato and green chilli.",
+                            "Cook uncovered until the oil separates.",
+                            "Finish with julienned ginger."
                         ]
                     },
                     "updatedAt": "",
-                    "imageRef": "asset:assets/images/karahi.jpg",
+                    "imageRef": "",
                     "youtubeUrl": "https://www.youtube.com/results?search_query=peshawari+karahi+recipe"
+                },
+                {
+                    "createdAt": "2026-10-15T17:30:00Z",
+                    "id": 11,
+                    "name": "Chicken Karahi",
+                    "ownerId": 2,
+                    "ratings": [
+                        {"userId": 1, "stars": 4, "proofImageRef": ""},
+                        {"userId": 2, "stars": 4, "proofImageRef": ""}
+                    ],
+                    "recipe": {
+                        "cookingTime": 35,
+                        "ingredients": ["chicken", "tomato", "green chilli", "ginger", "coriander"],
+                        "mainIngredient": "chicken",
+                        "steps": [
+                            "Sear the chicken in a hot karahi.",
+                            "Add chopped tomatoes and green chilli.",
+                            "Cook until the chicken is tender and the sauce thickens.",
+                            "Garnish with ginger and coriander."
+                        ]
+                    },
+                    "updatedAt": "",
+                    "imageRef": "",
+                    "youtubeUrl": "https://www.youtube.com/results?search_query=chicken+karahi+recipe"
+                },
+                {
+                    "createdAt": "2026-10-18T13:15:00Z",
+                    "id": 12,
+                    "name": "Mutton Karahi",
+                    "ownerId": 1,
+                    "ratings": [],
+                    "recipe": {
+                        "cookingTime": 90,
+                        "ingredients": ["mutton", "tomato", "green chilli", "yogurt", "garlic paste"],
+                        "mainIngredient": "mutton",
+                        "steps": [
+                            "Brown the mutton in oil with garlic paste.",
+                            "Add yogurt and cook until absorbed.",
+                            "Add tomatoes and green chilli and simmer.",
+                            "Cook until the mutton is tender and the oil separates."
+                        ]
+                    },
+                    "updatedAt": "",
+                    "imageRef": "",
+                    "youtubeUrl": "https://www.youtube.com/results?search_query=mutton+karahi+recipe"
                 }
             ]
         },
         {
             "createdAt": "2026-10-11T13:05:55Z",
             "id": 4,
-            "name": "chicken tikka",
+            "name": "Chicken Tikka",
             "variants": [
                 {
                     "createdAt": "2026-10-11T13:06:12Z",
                     "id": 4,
-                    "name": "spicy chicken tikka",
+                    "name": "Chicken Tikka",
                     "ownerId": 1,
-                    "ratings": [],
+                    "ratings": [
+                        {"userId": 1, "stars": 5, "proofImageRef": ""},
+                        {"userId": 2, "stars": 4, "proofImageRef": ""}
+                    ],
                     "recipe": {
-                        "cookingTime": 60,
-                        "ingredients": [
-                            "coal",
-                            "oil",
-                            "spices",
-                            "yogurt"
-                        ],
+                        "cookingTime": 40,
+                        "ingredients": ["chicken", "yogurt", "lemon juice", "red chilli", "garam masala"],
                         "mainIngredient": "chicken",
                         "steps": [
-                            "cola",
-                            "chicken"
+                            "Marinate the chicken in yogurt, lemon and spices for two hours.",
+                            "Thread the pieces onto skewers.",
+                            "Grill or bake until charred at the edges.",
+                            "Rest for five minutes before serving."
                         ]
                     },
                     "updatedAt": "",
-                    "imageRef": "asset:assets/images/chicken-tikka.jpg",
+                    "imageRef": "",
                     "youtubeUrl": "https://www.youtube.com/results?search_query=chicken+tikka+recipe"
+                },
+                {
+                    "createdAt": "2026-10-17T20:40:00Z",
+                    "id": 13,
+                    "name": "Malai Tikka",
+                    "ownerId": 2,
+                    "ratings": [
+                        {"userId": 1, "stars": 4, "proofImageRef": ""},
+                        {"userId": 2, "stars": 4, "proofImageRef": ""}
+                    ],
+                    "recipe": {
+                        "cookingTime": 40,
+                        "ingredients": ["chicken", "cream", "cheese", "white pepper", "lemon juice"],
+                        "mainIngredient": "chicken",
+                        "steps": [
+                            "Mix cream, cheese, white pepper and lemon juice.",
+                            "Coat the chicken and marinate overnight.",
+                            "Grill gently so the marinade does not burn.",
+                            "Serve with mint chutney."
+                        ]
+                    },
+                    "updatedAt": "",
+                    "imageRef": "",
+                    "youtubeUrl": "https://www.youtube.com/results?search_query=malai+tikka+recipe"
+                },
+                {
+                    "createdAt": "2026-10-19T18:25:00Z",
+                    "id": 14,
+                    "name": "Bihari Tikka",
+                    "ownerId": 1,
+                    "ratings": [],
+                    "recipe": {
+                        "cookingTime": 50,
+                        "ingredients": ["beef", "papaya paste", "yogurt", "mustard oil", "fried onion"],
+                        "mainIngredient": "beef",
+                        "steps": [
+                            "Tenderise the beef with papaya paste.",
+                            "Marinate with yogurt, mustard oil and fried onion.",
+                            "Grill slowly until tender and browned.",
+                            "Slice and serve with naan."
+                        ]
+                    },
+                    "updatedAt": "",
+                    "imageRef": "",
+                    "youtubeUrl": "https://www.youtube.com/results?search_query=bihari+tikka+recipe"
                 }
             ]
         },
@@ -154,13 +321,7 @@
                     "updatedAt": "",
                     "recipe": {
                         "mainIngredient": "rice",
-                        "ingredients": [
-                            "rice",
-                            "chicken",
-                            "yogurt",
-                            "spices",
-                            "onion"
-                        ],
+                        "ingredients": ["rice", "chicken", "yogurt", "spices", "onion"],
                         "steps": [
                             "marinate the chicken",
                             "fry the onions",
@@ -170,17 +331,58 @@
                         "cookingTime": 60
                     },
                     "ratings": [
-                        {
-                            "userId": 1,
-                            "stars": 5
-                        },
-                        {
-                            "userId": 2,
-                            "stars": 4
-                        }
+                        {"userId": 1, "stars": 5, "proofImageRef": ""},
+                        {"userId": 2, "stars": 5, "proofImageRef": ""}
                     ],
-                    "imageRef": "asset:assets/images/biryani.jpg",
+                    "imageRef": "",
                     "youtubeUrl": "https://www.youtube.com/results?search_query=chicken+biryani+recipe"
+                },
+                {
+                    "id": 15,
+                    "name": "Beef Biryani",
+                    "ownerId": 2,
+                    "createdAt": "2026-10-21T19:10:00Z",
+                    "updatedAt": "",
+                    "recipe": {
+                        "mainIngredient": "rice",
+                        "ingredients": ["rice", "beef", "yogurt", "fried onion", "saffron"],
+                        "steps": [
+                            "Boil the beef with spices until tender.",
+                            "Layer par-boiled rice over the beef.",
+                            "Add saffron milk and fried onion.",
+                            "Steam on low heat for 25 minutes."
+                        ],
+                        "cookingTime": 120
+                    },
+                    "ratings": [
+                        {"userId": 1, "stars": 4, "proofImageRef": ""},
+                        {"userId": 2, "stars": 5, "proofImageRef": ""}
+                    ],
+                    "imageRef": "",
+                    "youtubeUrl": "https://www.youtube.com/results?search_query=beef+biryani+recipe"
+                },
+                {
+                    "id": 16,
+                    "name": "Vegetable Biryani",
+                    "ownerId": 1,
+                    "createdAt": "2026-10-23T12:30:00Z",
+                    "updatedAt": "",
+                    "recipe": {
+                        "mainIngredient": "rice",
+                        "ingredients": ["rice", "carrot", "peas", "potato", "yogurt"],
+                        "steps": [
+                            "Par-boil the rice with whole spices.",
+                            "Cook the vegetables with yogurt and spices.",
+                            "Layer the rice and vegetables.",
+                            "Steam for 20 minutes and fluff gently."
+                        ],
+                        "cookingTime": 50
+                    },
+                    "ratings": [
+                        {"userId": 1, "stars": 4, "proofImageRef": ""}
+                    ],
+                    "imageRef": "",
+                    "youtubeUrl": "https://www.youtube.com/results?search_query=vegetable+biryani+recipe"
                 }
             ]
         },
@@ -197,14 +399,9 @@
                     "updatedAt": "",
                     "recipe": {
                         "mainIngredient": "beef",
-                        "ingredients": [
-                            "beef",
-                            "flour",
-                            "spices",
-                            "ginger"
-                        ],
+                        "ingredients": ["beef", "flour", "spices", "ginger", "bone marrow"],
                         "steps": [
-                            "cook the beef slowly",
+                            "cook the beef slowly with spices",
                             "add the flour slurry",
                             "simmer until thick",
                             "garnish with ginger"
@@ -212,18 +409,61 @@
                         "cookingTime": 180
                     },
                     "ratings": [
-                        {
-                            "userId": 1,
-                            "stars": 4
-                        }
+                        {"userId": 1, "stars": 5, "proofImageRef": ""},
+                        {"userId": 2, "stars": 5, "proofImageRef": ""}
                     ],
-                    "imageRef": "asset:assets/images/nihari.jpg",
+                    "imageRef": "",
                     "youtubeUrl": "https://www.youtube.com/results?search_query=beef+nihari+recipe"
+                },
+                {
+                    "id": 17,
+                    "name": "Chicken Nihari",
+                    "ownerId": 2,
+                    "createdAt": "2026-10-24T08:15:00Z",
+                    "updatedAt": "",
+                    "recipe": {
+                        "mainIngredient": "chicken",
+                        "ingredients": ["chicken", "flour", "nihari masala", "ginger", "green chilli"],
+                        "steps": [
+                            "Brown the chicken with nihari masala.",
+                            "Add water and simmer until tender.",
+                            "Stir in the flour slurry and cook until thick.",
+                            "Top with ginger and green chilli."
+                        ],
+                        "cookingTime": 70
+                    },
+                    "ratings": [
+                        {"userId": 1, "stars": 4, "proofImageRef": ""},
+                        {"userId": 2, "stars": 4, "proofImageRef": ""}
+                    ],
+                    "imageRef": "",
+                    "youtubeUrl": "https://www.youtube.com/results?search_query=chicken+nihari+recipe"
+                },
+                {
+                    "id": 18,
+                    "name": "Mutton Nihari",
+                    "ownerId": 1,
+                    "createdAt": "2026-10-25T20:45:00Z",
+                    "updatedAt": "",
+                    "recipe": {
+                        "mainIngredient": "mutton",
+                        "ingredients": ["mutton", "flour", "nihari masala", "yogurt", "ginger"],
+                        "steps": [
+                            "Cook the mutton with nihari masala on low heat.",
+                            "Add yogurt and simmer until the meat falls apart.",
+                            "Stir in the flour slurry to thicken.",
+                            "Finish with ginger and a squeeze of lemon."
+                        ],
+                        "cookingTime": 210
+                    },
+                    "ratings": [],
+                    "imageRef": "",
+                    "youtubeUrl": "https://www.youtube.com/results?search_query=mutton+nihari+recipe"
                 }
             ]
         }
     ],
     "lastCommentId": 0,
     "lastDishId": 6,
-    "lastVariantId": 6
+    "lastVariantId": 18
 }

@@ -30,6 +30,9 @@ void showResults(RecipeDatabase &db, UserDatabase &users, int userId, string key
         cout << "\nBest matches:\n";
         for(RecipeRef &ref : result.best){
             Dish &dish = db.getDishes()[ref.dishIndex];
+            int rank = recipeRankInDish(db, ref);
+            cout << (rank > 0 ? "#" + to_string(rank) + " in " + dish.getName()
+                              : "New in " + dish.getName()) << "\n";
             showRecipePage(dish, dish.getVariants()[ref.variantIndex], users, userId, 2);
         }
     }
@@ -38,6 +41,9 @@ void showResults(RecipeDatabase &db, UserDatabase &users, int userId, string key
         cout << "\nOther recipes that also contain this:\n";
         for(RecipeRef &ref : result.others){
             Dish &dish = db.getDishes()[ref.dishIndex];
+            int rank = recipeRankInDish(db, ref);
+            cout << (rank > 0 ? "#" + to_string(rank) + " in " + dish.getName()
+                              : "New in " + dish.getName()) << "\n";
             showRecipePage(dish, dish.getVariants()[ref.variantIndex], users, userId, 2);
         }
     }

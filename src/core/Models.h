@@ -104,6 +104,18 @@ string tidyName(string s){
     return result;
 }
 
+// Account names are 3-20 characters: letters, numbers, dot, underscore or
+// hyphen, starting with a letter or number. Shared by the console and server.
+bool isValidUsername(string name){
+    if(name.size() < 3 || name.size() > 20) return false;
+    if(!isLetterOrDigit(name[0])) return false;
+    for(int i = 0; i < (int)name.size(); i++){
+        char c = name[i];
+        if(!isLetterOrDigit(c) && c != '_' && c != '.' && c != '-') return false;
+    }
+    return true;
+}
+
 // 5 -> "05"
 string twoDigits(int number){
     if(number < 10) return "0" + to_string(number);
@@ -593,6 +605,11 @@ public:
 
     int count(){
         return (int)list.size();
+    }
+
+    // Read-only access for the API, which adds usernames to each rating.
+    vector<Rating>& getList(){
+        return list;
     }
 
     double average(){

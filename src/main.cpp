@@ -13,9 +13,21 @@ using namespace std;
 //  three recipe menus plus account settings.
 // ============================================================
 
+// A fresh checkout has no data/ files yet. Copy the tracked demo data so the
+// console and the server start from the same 18 recipes and two accounts.
+void copySeedIfMissing(const string& target, const string& seed){
+    if(std::filesystem::exists(target)) return;
+    if(!std::filesystem::exists(seed)) return;
+    std::filesystem::copy_file(seed, target,
+                               std::filesystem::copy_options::overwrite_existing);
+}
+
 int main(){
     // All runtime state (recipes, accounts, saved login) lives in data/.
     std::filesystem::create_directories("data");
+    copySeedIfMissing("data/recipes.json", "seed/recipes.json");
+    copySeedIfMissing("data/users.json", "seed/users.json");
+
     RecipeDatabase db("data");
     UserDatabase users("data");
 

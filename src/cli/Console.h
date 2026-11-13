@@ -187,17 +187,8 @@ string readPassword(string prompt){
 //  PART 2: accounts (sign up, log in, forgot / change password, delete account)
 // ============================================================
 
-// 3-20 characters: letters, numbers, dot (.), underscore (_) or hyphen (-).
-// Must start with a letter or number.   Example: M.Abeer  or  abeer_25
-bool isValidUsername(string name){
-    if(name.size() < 3 || name.size() > 20) return false;
-    if(!isLetterOrDigit(name[0])) return false;
-    for(int i = 0; i < (int)name.size(); i++){
-        char c = name[i];
-        if(!isLetterOrDigit(c) && c != '_' && c != '.' && c != '-') return false;
-    }
-    return true;
-}
+// isValidUsername() lives in Models.h so the HTTP server and console share
+// exactly the same account rules.
 
 // Asks for a new password two times (to avoid typing mistakes)
 string askNewPassword(){
@@ -374,12 +365,39 @@ void changePassword(UserDatabase &users, int userId){
     if(users.save()) cout << "Password changed successfully!\n";
     else cout << "Something went wrong, password was NOT changed.\n";
 }
+// Ranks a recipe inside its own dish. 0 means it has no ratings yet ("New").
+// Rated recipes sort by average, then number of ratings, then newest first.
+int recipeRankInDish(RecipeDatabase &db, RecipeRef ref){
+    Dish &dish = db.getDishes()[ref.dishIndex];
+    Variant &variant = dish.getVariants()[ref.variantIndex];
+    if(variant.getRatings().count() == 0) return 0;
+
+    int rank = 1;
+    for(Variant &other : dish.getVariants()){
+        if(other.getId() == variant.getId()) continue;
+        if(other.getRatings().count() == 0) continue;
+
+        bool better = false;
+        if(other.getRatings().average() > variant.getRatings().average()) better = true;
+        else if(other.getRatings().average() == variant.getRatings().average()
+                && other.getRatings().count() > variant.getRatings().count()) better = true;
+        else if(other.getRatings().average() == variant.getRatings().average()
+                && other.getRatings().count() == variant.getRatings().count()
+                && other.getCreatedAt() > variant.getCreatedAt()) better = true;
+
+        if(better) rank++;
+    }
+    return rank;
+}
+
 // "Biryani > Bombay Biryani  (4.5/5 from 3 ratings)"
 string describeRecipe(RecipeDatabase &db, RecipeRef ref){
     Dish &dish = db.getDishes()[ref.dishIndex];
     Variant &variant = dish.getVariants()[ref.variantIndex];
 
-    string text = dish.getName() + " > " + variant.getName();
+    int rank = recipeRankInDish(db, ref);
+    string text = rank > 0 ? "#" + to_string(rank) + " " : "[New] ";
+    text += dish.getName() + " > " + variant.getName();
     if(variant.getRatings().count() == 0){
         text += "  (not rated yet)";
     }

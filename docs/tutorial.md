@@ -8,6 +8,7 @@ Run all commands from the repository root.
 - `make`
 - `libcurl` development files (Debian/Ubuntu: `libcurl4-openssl-dev`)
 - `python3` for the HTTP smoke test
+- Flutter 3.47+ for the desktop/mobile app (optional for the server only)
 
 ## Build
 
@@ -18,8 +19,8 @@ make
 This creates:
 
 - `build/tastehub` — the console app
-- `build/backend_test` — the Stage 1 acceptance test
-- `build/tastehub-server` — the Stage 2 HTTP server
+- `build/backend_test` — the backend acceptance test
+- `build/tastehub-server` — the HTTP server
 
 To build only the HTTP server:
 
@@ -33,10 +34,11 @@ make server
 make test
 ```
 
-The test is offline and uses a fake AI extractor. A successful run ends with:
+The backend test is offline and uses a fake AI extractor. A successful run ends
+with:
 
 ```text
-ALL STAGE 1 CHECKS PASSED
+ALL BACKEND CHECKS PASSED
 ```
 
 The HTTP server has its own smoke test:
@@ -45,9 +47,19 @@ The HTTP server has its own smoke test:
 make http-test
 ```
 
-This starts a temporary server with a temporary data folder, checks every API
-route, restarts the server to prove persistence, and deletes the temporary data.
-It does not touch `data/recipes.json`.
+It starts a temporary server with a temporary data and uploads folder, checks
+authentication, ownership, per-user ratings, dish rankings, image uploads and
+persistence across a restart, then deletes the temporary data. It does not touch
+the real `data/` folder.
+
+The Flutter app has its own checks:
+
+```bash
+make app-test
+```
+
+This runs `flutter analyze` and the model, ranking, session, theme and widget
+tests. HTTP is mocked, so no server is needed.
 
 To rebuild from scratch:
 
@@ -55,6 +67,17 @@ To rebuild from scratch:
 make clean
 make
 ```
+
+## Demo accounts
+
+| Username | Password | User id |
+|---|---|---|
+| `junaid` | `tastehub` | `1` |
+| `guest` | `guest` | `2` |
+
+Each account has one active session. Logging in on another device replaces the
+previous token, which is useful for showing that recipes and ratings stay
+separate.
 
 ## Run the CLI
 
@@ -70,11 +93,16 @@ The first screen lets you log in or create an account. The main menu then offers
 4. Account settings
 0. Exit
 
-Runtime data is stored in `data/`. To reset the demo recipes from the clean seed:
+Runtime data is stored in `data/`. To reset the demo recipes, users and uploaded
+photos from the clean seed:
 
 ```bash
-./scripts/reset-demo.sh
+make reset-demo
 ```
+
+The previous `recipes.json`, `users.json` and uploads are backed up to
+`data/backups/<timestamp>/` first, so a demo can be restarted without losing the
+recipes and accounts created during it.
 
 ## Run the HTTP server
 
@@ -85,7 +113,7 @@ make run
 ```
 
 This builds the server if needed, then starts it on `127.0.0.1:8080` using the
-normal `data/` folder. Stop it with `Ctrl+C`.
+normal `data/` and `data/uploads/` folders. Stop it with `Ctrl+C`.
 
 A normal startup looks like this:
 
@@ -93,13 +121,15 @@ A normal startup looks like this:
 TasteHub HTTP server
   host:    127.0.0.1
   port:    8080
+  page:    http://127.0.0.1:8080/
   data:    data
-  recipes: 6
+  uploads: data/uploads
+  recipes: 18
 ```
 
-Open http://127.0.0.1:8080 in Chrome. The built-in page lists recipes, searches
-them, shows the leaderboard and opens a recipe's ingredients and steps. It is
-plain HTML and JavaScript and uses the JSON API below.
+Open http://127.0.0.1:8080 in a browser. The built-in page is read-only, groups
+recipes by dish, ranks the recipes inside each dish, searches, opens ingredients
+and steps, and shows uploaded photos and rating proofs.
 
 For a demo where a phone or another device must reach the server:
 
@@ -108,26 +138,28 @@ make demo
 ```
 
 `make demo` is the same as `make run`, but binds to `0.0.0.0` so other devices on
-the network can connect. On the other device, open `http://<this-computer-ip>:8080`
-in its browser.
+the network can connect. On the other device, open
+`http://<this-computer-ip>:8080` in its browser.
 
-Change the port or data folder when needed:
+Change the port, data folder or uploads folder when needed:
 
 ```bash
 make run PORT=9000
 make run DATA_DIR=my-data
+make run UPLOADS_DIR=my-data/photos
 make demo PORT=9000
 ```
 
 The equivalent long command, if you prefer to run the binary directly:
 
 ```bash
-./build/tastehub-server --host 127.0.0.1 --port 8080 --data-dir data
+./build/tastehub-server --host 127.0.0.1 --port 8080 \
+  --data-dir data --uploads-dir data/uploads
 ```
 
-The server reads and writes the same `data/recipes.json` as the console app. It
-prints one line per request and never asks for console input. Stop it with
-`Ctrl+C`.
+The server reads and writes the same `recipes.json` and `users.json` as the
+console app. It prints one line per request and never asks for console input.
+Stop it with `Ctrl+C`.
 
 Run only one process against a data folder at a time. The console app and the
 server keep separate in-memory copies, so editing from both at once can overwrite
@@ -136,10 +168,11 @@ changes.
 Options:
 
 ```text
---host <address>   Interface to bind (default: 127.0.0.1)
---port <number>    TCP port to listen on (default: 8080)
---data-dir <path>  Folder holding recipes.json (default: data)
--h, --help         Show help
+--host <address>      Interface to bind (default: 127.0.0.1)
+--port <number>       TCP port to listen on (default: 8080)
+--data-dir <path>     Folder holding recipes.json and users.json (default: data)
+--uploads-dir <path>  Folder for uploaded photos (default: <data-dir>/uploads)
+-h, --help            Show help
 ```
 
 Use `--host 0.0.0.0` when another device needs to reach the server. Keep
@@ -156,14 +189,26 @@ Stop the other server or choose another port with `make run PORT=8081`.
 
 ### Quick API checks
 
-With the server running in another terminal:
+With the server running in another terminal, public reads need no token:
 
 ```bash
 curl http://127.0.0.1:8080/api/health
 curl http://127.0.0.1:8080/api/recipes
 curl http://127.0.0.1:8080/api/recipes/5
 curl "http://127.0.0.1:8080/api/search?q=briyani"
-curl http://127.0.0.1:8080/api/leaderboard
+curl "http://127.0.0.1:8080/api/leaderboard?dish=Biryani"
+```
+
+Log in and keep the token for the write examples:
+
+```bash
+TOKEN=$(curl -s -X POST http://127.0.0.1:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"junaid","password":"tastehub"}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+
+curl http://127.0.0.1:8080/api/auth/me \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 Create a recipe:
@@ -171,6 +216,7 @@ Create a recipe:
 ```bash
 curl -X POST http://127.0.0.1:8080/api/recipes \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "dish": "Biryani",
     "title": "Test Biryani",
@@ -181,18 +227,29 @@ curl -X POST http://127.0.0.1:8080/api/recipes \
   }'
 ```
 
+Upload a real photo and use the returned `/uploads/...` path on a recipe or a
+rating proof:
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/images \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@/path/to/my-biryani.jpg"
+```
+
 Rate it with an optional proof image:
 
 ```bash
 curl -X PUT http://127.0.0.1:8080/api/recipes/7/rating \
   -H "Content-Type: application/json" \
-  -d '{"stars": 5, "proofImageRef": "https://example.com/my-biryani.jpg"}'
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"stars": 5, "proofImageRef": "/uploads/img_example.jpg"}'
 ```
 
-Delete it:
+Delete it (only the owner can edit or delete):
 
 ```bash
-curl -X DELETE http://127.0.0.1:8080/api/recipes/7
+curl -X DELETE http://127.0.0.1:8080/api/recipes/7 \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 Ask the AI for a draft (requires a Gemini key; this does not save anything):
@@ -200,10 +257,100 @@ Ask the AI for a draft (requires a Gemini key; this does not save anything):
 ```bash
 curl -X POST http://127.0.0.1:8080/api/recipes/parse \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"text":"I made chicken biryani with rice, chicken, yogurt and spices."}'
 ```
 
 The full request and response contract is in `API.md`.
+
+## Run the Flutter app
+
+The client lives in `tastehub_app/`. It talks to the same JSON API and does not
+need the C++ console.
+
+### Linux desktop
+
+Start the server in one terminal:
+
+```bash
+make run
+```
+
+Start the app in a second terminal:
+
+```bash
+make app-run
+```
+
+The app opens on a login screen. Use one of the demo buttons or create an
+account. After login:
+
+- Home groups recipes into dishes, with **All dishes** and **My recipes** filters.
+- Tapping a dish opens its recipes ranked #1, #2, #3. The best rated recipe is
+  highlighted as **Top pick**; unrated recipes are marked **New** and come last.
+- Any logged-in user can rate a recipe and attach a proof photo.
+- Only the recipe owner sees **Edit** and **Delete**.
+- Add recipe offers manual entry or an AI draft. Photos can be uploaded from the
+  device (JPEG/PNG/WebP, up to 10 MB) or added as an image URL.
+- The brightness menu switches between **System**, **Light** and **Dark**; the
+  choice is saved between launches.
+
+The old global leaderboard tab is gone. Rankings are always inside a dish.
+
+Use a different server URL if needed:
+
+```bash
+make app-run APP_API_URL=http://127.0.0.1:9000
+```
+
+Build a release binary without starting it:
+
+```bash
+make app-build
+./tastehub_app/build/linux/x64/release/bundle/tastehub_app
+```
+
+### Android
+
+The phone must reach the server over the network. Start demo mode:
+
+```bash
+make demo
+```
+
+Build a debug APK with the laptop's LAN or Tailscale IP:
+
+```bash
+make app-apk APP_API_URL=http://100.x.y.z:8080
+```
+
+Install it with
+`adb install -r tastehub_app/build/app/outputs/flutter-apk/app-debug.apk`.
+This requires the Android SDK and `adb`, which `flutter doctor` checks.
+
+Debug builds allow plain HTTP for the demo. A release build would need HTTPS or
+an explicit cleartext policy.
+
+### App checks
+
+```bash
+make app-test       # flutter analyze + tests, no server needed
+make app-api-check  # hit a running server with the app's API client
+```
+
+`make app-api-check` logs in as `junaid`, reads the real server, groups recipes
+by dish and logs out. A successful run looks like:
+
+```text
+health:     ok (18 recipes)
+login:      junaid (user 1)
+recipes:    18
+detail:     Crispy Fries (4 ingredients, 4 steps)
+search:     3 result(s) for "briyani" - first: Chicken Biryani
+dishes:     6
+  Biryani: 3 recipe(s), top Chicken Biryani 5.0
+  ...
+```
 
 ## Optional: real Gemini check
 

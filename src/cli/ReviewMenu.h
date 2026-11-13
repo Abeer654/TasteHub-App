@@ -71,9 +71,8 @@ void rateRecipe(RecipeDatabase &db, UserDatabase &users, int userId, int variant
     RecipeRef ref;
     if(!loadAll(db, users) || !findRecipe(db, variantId, ref)) return;
 
-    // The Stage 1 demo has exactly one user, and the seed recipes are owned by
-    // that user. The HTTP API therefore allows rating your own recipe; the
-    // console follows the same rule so the rating flow works with the demo data.
+    // Every signed-in user may rate any recipe, including their own. This
+    // keeps the demo flow simple and matches the HTTP API.
     int stars = askChoice("Your rating from 1 (bad) to 5 (excellent), 0 to cancel: ", 0, 5);
     if(stars == 0) return;
 
@@ -303,6 +302,13 @@ void recipePage(RecipeDatabase &db, UserDatabase &users, int userId, int variant
         if(!loadAll(db, users) || !findRecipe(db, variantId, ref)) return;
 
         Dish &dish = db.getDishes()[ref.dishIndex];
+        int rank = recipeRankInDish(db, ref);
+        if(rank > 0){
+            cout << "Dish rank: #" << rank << " in " << dish.getName() << "\n";
+        }
+        else {
+            cout << "Dish rank: New recipe in " << dish.getName() << "\n";
+        }
         showRecipePage(dish, dish.getVariants()[ref.variantIndex], users, userId, 0);
 
         cout << "\nWhat do you want to do?\n";

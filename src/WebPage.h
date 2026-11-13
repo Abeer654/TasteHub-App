@@ -8,7 +8,9 @@
 //  no matter which folder it is started from. It is plain HTML, CSS
 //  and JavaScript and calls the existing JSON routes.
 //
-//  Keep this file presentational only. Recipe rules belong in
+//  The page is read-only. It groups recipes by dish and ranks the
+//  recipes inside each dish, which is the same story the Flutter app
+//  tells. Keep this file presentational only: recipe rules belong in
 //  BackendService, not here.
 // ============================================================
 
@@ -43,7 +45,7 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
     }
 
     header, main {
-      width: min(1080px, 100% - 40px);
+      width: min(1120px, 100% - 40px);
       margin-inline: auto;
     }
 
@@ -89,32 +91,6 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
       box-shadow: 0 0 0 3px #bb4d2a1f;
     }
 
-    .tabs {
-      display: flex;
-      gap: 4px;
-      padding: 4px;
-      background: #f1e7db;
-      border-radius: 999px;
-    }
-
-    .tab {
-      padding: 9px 16px;
-      color: var(--muted);
-      background: transparent;
-      border: 0;
-      border-radius: 999px;
-      font: inherit;
-      font-size: 0.92rem;
-      font-weight: 650;
-      cursor: pointer;
-    }
-
-    .tab.active {
-      color: var(--ink);
-      background: var(--card);
-      box-shadow: 0 1px 4px #2d241c14;
-    }
-
     main { padding-bottom: 64px; }
 
     .status {
@@ -126,6 +102,26 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
 
     .status.error { color: #a32c1d; font-weight: 600; }
 
+    .dish-section { margin: 0 0 34px; }
+
+    .dish-head {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 16px;
+      align-items: baseline;
+      margin: 0 2px 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .dish-head h2 {
+      margin: 0;
+      font-size: 1.45rem;
+      letter-spacing: -0.03em;
+    }
+
+    .dish-head .meta { margin-left: auto; }
+
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(235px, 1fr));
@@ -136,8 +132,7 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
       display: flex;
       flex-direction: column;
       gap: 9px;
-      min-height: 168px;
-      padding: 20px;
+      padding: 0 0 16px;
       text-align: left;
       color: inherit;
       background: var(--card);
@@ -145,6 +140,7 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
       border-radius: 18px;
       font: inherit;
       cursor: pointer;
+      overflow: hidden;
       transition: transform 160ms ease, box-shadow 160ms ease;
     }
 
@@ -158,6 +154,33 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
       outline-offset: 2px;
     }
 
+    .photo {
+      position: relative;
+      display: block;
+      width: 100%;
+      aspect-ratio: 16 / 10;
+      object-fit: cover;
+      background: #f1e7db;
+    }
+
+    .placeholder {
+      display: grid;
+      place-items: center;
+      width: 100%;
+      aspect-ratio: 16 / 10;
+      color: #fffdfa;
+      font-size: 2.1rem;
+      font-weight: 760;
+    }
+
+    .card-body {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 0 18px;
+      flex: 1;
+    }
+
     .dish {
       color: var(--accent);
       font-size: 0.7rem;
@@ -167,7 +190,7 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
     }
 
     .card-title {
-      font-size: 1.22rem;
+      font-size: 1.18rem;
       font-weight: 720;
       line-height: 1.28;
     }
@@ -188,8 +211,14 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
 
     .stars { color: var(--gold); letter-spacing: 0.08em; }
 
+    .badge-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 14px 18px 0;
+    }
+
     .rank {
-      align-self: flex-start;
       padding: 3px 9px;
       color: var(--accent);
       background: #f9e7db;
@@ -198,8 +227,21 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
       font-weight: 750;
     }
 
+    .rank.top {
+      color: #7a4a00;
+      background: #f7e2b8;
+    }
+
+    .new-tag {
+      padding: 3px 9px;
+      color: #4d6b3f;
+      background: #e7efdf;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 750;
+    }
+
     .empty {
-      grid-column: 1 / -1;
       padding: 36px 20px;
       color: var(--muted);
       text-align: center;
@@ -209,9 +251,9 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
     }
 
     dialog {
-      width: min(640px, calc(100vw - 32px));
+      width: min(680px, calc(100vw - 32px));
       max-height: 86vh;
-      padding: 30px;
+      padding: 0 30px 30px;
       color: var(--ink);
       background: var(--card);
       border: 0;
@@ -222,9 +264,25 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
 
     dialog::backdrop { background: #2d241c66; }
 
+    .detail-photo {
+      width: calc(100% + 60px);
+      max-height: 300px;
+      margin: 0 -30px 22px;
+      object-fit: cover;
+      border-radius: 22px 22px 0 0;
+    }
+
+    .detail-placeholder {
+      width: calc(100% + 60px);
+      height: 190px;
+      margin: 0 -30px 22px;
+      border-radius: 22px 22px 0 0;
+      font-size: 3rem;
+    }
+
     .close {
       position: sticky;
-      top: 0;
+      top: 10px;
       float: right;
       width: 36px;
       height: 36px;
@@ -235,6 +293,7 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
       font-size: 1.25rem;
       line-height: 1;
       cursor: pointer;
+      z-index: 2;
     }
 
     dialog h2 {
@@ -271,14 +330,34 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
       gap: 8px 18px;
       color: var(--muted);
       font-size: 0.92rem;
+      margin-bottom: 8px;
+    }
+
+    .rating-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 12px;
+      align-items: baseline;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 0.9rem;
+    }
+
+    .rating-row .meta { margin-left: auto; }
+    .rating-row img {
+      width: 34px;
+      height: 34px;
+      object-fit: cover;
+      border-radius: 8px;
     }
 
     @media (max-width: 560px) {
       header { padding-top: 34px; }
-      .controls { align-items: stretch; }
-      .tabs { justify-content: center; }
-      .tab { flex: 1; }
-      dialog { padding: 22px; }
+      dialog { padding: 0 22px 22px; }
+      .detail-photo, .detail-placeholder {
+        width: calc(100% + 44px);
+        margin-inline: -22px;
+      }
     }
   </style>
 </head>
@@ -286,24 +365,18 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
   <header>
     <div class="brand">
       <h1>Taste<span>Hub</span></h1>
-      <p>Home cooking, shared. Browse the recipes saved on this server.</p>
+      <p>Home cooking, shared. Every dish ranks its own recipes.</p>
     </div>
 
     <div class="controls">
       <input id="search" type="search" placeholder="Search recipes, dishes or ingredients..."
              autocomplete="off" aria-label="Search recipes">
-      <div class="tabs" role="tablist" aria-label="Recipe views">
-        <button class="tab active" data-view="recipes" role="tab"
-                aria-selected="true">All recipes</button>
-        <button class="tab" data-view="leaderboard" role="tab"
-                aria-selected="false">Leaderboard</button>
-      </div>
     </div>
   </header>
 
   <main>
     <p id="status" class="status" aria-live="polite">Loading recipes...</p>
-    <section id="grid" class="grid" aria-live="polite"></section>
+    <section id="dishes" aria-live="polite"></section>
     <noscript>
       <p class="empty">This page needs JavaScript. The same data is available
       as JSON at <code>/api/recipes</code>.</p>
@@ -317,16 +390,23 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
 
   <script>
     const state = {
-      view: "recipes",
       recipes: [],
-      leaderboard: [],
       query: "",
     };
+
+    const palettes = [
+      ["#b65a36", "#e0a15a"],
+      ["#5b7b4b", "#a9be7a"],
+      ["#8b4a5e", "#d5909a"],
+      ["#3f6a72", "#7fb0b3"],
+      ["#9a6b2f", "#d8b36a"],
+      ["#6b4e7a", "#ad8fbc"],
+    ];
 
     let requestNumber = 0;
     let searchTimer = null;
 
-    const grid = document.getElementById("grid");
+    const dishesRoot = document.getElementById("dishes");
     const statusLine = document.getElementById("status");
     const searchInput = document.getElementById("search");
     const detailDialog = document.getElementById("detail");
@@ -361,63 +441,148 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
       statusLine.classList.toggle("error", isError);
     }
 
-    function updateTabs() {
-      document.querySelectorAll(".tab").forEach((tab) => {
-        const active = tab.dataset.view === state.view;
-        tab.classList.toggle("active", active);
-        tab.setAttribute("aria-selected", String(active));
-      });
+    // Only user URLs and files uploaded through /api/images are shown.
+    // Seed recipes have an empty imageRef and keep the gradient placeholder.
+    function imageUrl(ref) {
+      if (typeof ref !== "string") return "";
+      if (ref.startsWith("/uploads/")) return ref;
+      if (/^https?:\/\//i.test(ref)) return ref;
+      return "";
     }
 
-    function recipeCard(recipe, rank = 0) {
+    function hashText(text) {
+      let hash = 0;
+      for (const char of String(text || "?")) {
+        hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+      }
+      return hash;
+    }
+
+    function gradient(text) {
+      const palette = palettes[hashText(text) % palettes.length];
+      return "linear-gradient(135deg, " + palette[0] + ", " + palette[1] + ")";
+    }
+
+    function placeholder(text, extraClass = "placeholder") {
+      const letter = escapeHtml(String(text || "?").trim().charAt(0) || "?");
+      return '<div class="' + extraClass + '" style="background: ' +
+             gradient(text) + '">' + letter.toUpperCase() + "</div>";
+    }
+
+    function photoHtml(recipe, extraClass = "photo") {
+      const url = imageUrl(recipe.imageRef);
+      if (!url) return placeholder(recipe.title, extraClass.replace("photo", "placeholder"));
+      return '<img class="' + extraClass + '" src="' + escapeHtml(url) +
+             '" alt="' + escapeHtml(recipe.title) + '" loading="lazy">';
+    }
+
+    // Same order as the backend: average desc, rating count desc, newest
+    // first. Recipes without ratings follow, newest first, marked "New".
+    function rankRecipes(recipes) {
+      const rated = recipes.filter((recipe) => Number(recipe.ratingCount) > 0);
+      const unrated = recipes.filter((recipe) => Number(recipe.ratingCount) === 0);
+
+      rated.sort((a, b) => {
+        if (Number(b.averageRating) !== Number(a.averageRating)) {
+          return Number(b.averageRating) - Number(a.averageRating);
+        }
+        if (Number(b.ratingCount) !== Number(a.ratingCount)) {
+          return Number(b.ratingCount) - Number(a.ratingCount);
+        }
+        return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+      });
+      unrated.sort((a, b) =>
+        String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+
+      return rated.concat(unrated);
+    }
+
+    function groupByDish(recipes) {
+      const groups = new Map();
+
+      for (const recipe of recipes) {
+        const name = recipe.dish || "Recipes";
+        const key = name.toLowerCase();
+        if (!groups.has(key)) groups.set(key, { name, recipes: [] });
+        groups.get(key).recipes.push(recipe);
+      }
+
+      return [...groups.values()].sort((a, b) =>
+        a.name.localeCompare(b.name));
+    }
+
+    function ratingLine(recipe) {
       const rated = Number(recipe.ratingCount) > 0;
+      return '<span class="rating">' +
+        '<span class="stars">' + (rated ? stars(recipe.averageRating) : "☆☆☆☆☆") + "</span>" +
+        '<span class="meta">' + (rated
+          ? Number(recipe.averageRating).toFixed(1) + " (" + recipe.ratingCount + ")"
+          : "New · not rated yet") + "</span></span>";
+    }
+
+    function recipeCard(recipe, rank) {
       const time = recipe.cookingTime ? recipe.cookingTime + " min" : "No time set";
       const ingredient = recipe.mainIngredient || "Ingredient not set";
+      const owner = recipe.ownerName ? "by " + recipe.ownerName : "owner unknown";
 
       return `
         <button class="card" data-id="${recipe.id}">
-          ${rank ? `<span class="rank">#${rank}</span>` : ""}
-          <span class="dish">${escapeHtml(recipe.dish || "Recipe")}</span>
-          <span class="card-title">${escapeHtml(recipe.title)}</span>
-          <span class="meta">${escapeHtml(time)} · ${escapeHtml(ingredient)}</span>
-          <span class="rating">
-            <span class="stars">${rated ? stars(recipe.averageRating) : "☆☆☆☆☆"}</span>
-            <span class="meta">${rated
-              ? Number(recipe.averageRating).toFixed(1) + " (" + recipe.ratingCount + ")"
-              : "Not rated yet"}</span>
+          <div class="badge-row">
+            ${rank > 0
+              ? `<span class="rank${rank === 1 ? " top" : ""}">#${rank}${rank === 1 ? " · Top pick" : ""}</span>`
+              : '<span class="new-tag">New</span>'}
+          </div>
+          ${photoHtml(recipe)}
+          <span class="card-body">
+            <span class="dish">${escapeHtml(recipe.dish || "Recipe")}</span>
+            <span class="card-title">${escapeHtml(recipe.title)}</span>
+            <span class="meta">${escapeHtml(owner)} · ${escapeHtml(time)} · ${escapeHtml(ingredient)}</span>
+            ${ratingLine(recipe)}
           </span>
         </button>`;
     }
 
+    function dishSection(group, matchCount) {
+      const ranked = rankRecipes(group.recipes);
+      const top = ranked.find((recipe) => Number(recipe.ratingCount) > 0);
+      const count = group.recipes.length;
+      const summary = matchCount !== undefined
+        ? matchCount + " matching recipe" + (matchCount === 1 ? "" : "s")
+        : count + " recipe" + (count === 1 ? "" : "s") +
+          (top ? " · Top: " + top.title + " (" +
+            Number(top.averageRating).toFixed(1) + ")" : " · No ratings yet");
+
+      return `
+        <section class="dish-section">
+          <div class="dish-head">
+            <h2>${escapeHtml(group.name)}</h2>
+            <span class="meta">${escapeHtml(summary)}</span>
+          </div>
+          <div class="grid">
+            ${ranked.map((recipe, index) => recipeCard(recipe, index + 1)).join("")}
+          </div>
+        </section>`;
+    }
+
     function render() {
-      updateTabs();
+      const groups = groupByDish(state.recipes);
+      const recipeCount = state.recipes.length;
 
-      if (state.view === "leaderboard") {
-        const entries = state.leaderboard;
-        setStatus(entries.length
-          ? entries.length + " rated recipe" + (entries.length === 1 ? "" : "s")
-          : "No ratings yet. Rate a recipe through the API to make the leaderboard.");
-
-        grid.innerHTML = entries.length
-          ? entries.map((entry) => recipeCard(entry.recipe, entry.rank)).join("")
-          : '<p class="empty">The leaderboard is empty for now.</p>';
-        return;
-      }
-
-      const recipes = state.recipes;
       setStatus(state.query
-        ? recipes.length + " result" + (recipes.length === 1 ? "" : "s") +
-          ' for "' + state.query + '"'
-        : recipes.length + " recipe" + (recipes.length === 1 ? "" : "s") + " saved");
+        ? recipeCount + " result" + (recipeCount === 1 ? "" : "s") +
+          ' for "' + state.query + '" · grouped by dish'
+        : groups.length + " dish" + (groups.length === 1 ? "" : "es") + " · " +
+          recipeCount + " recipe" + (recipeCount === 1 ? "" : "s") + " saved");
 
-      grid.innerHTML = recipes.length
-        ? recipes.map((recipe) => recipeCard(recipe)).join("")
+      dishesRoot.innerHTML = groups.length
+        ? groups.map((group) => dishSection(
+            group,
+            state.query ? group.recipes.length : undefined)).join("")
         : '<p class="empty">No recipes found. Add one through the API or console app.</p>';
     }
 
     async function loadRecipes() {
       const current = ++requestNumber;
-      state.view = "recipes";
       state.query = "";
       setStatus("Loading recipes...");
 
@@ -429,31 +594,13 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
       } catch (error) {
         if (current !== requestNumber) return;
         setStatus(error.message, true);
-        grid.innerHTML = "";
-      }
-    }
-
-    async function loadLeaderboard() {
-      const current = ++requestNumber;
-      state.view = "leaderboard";
-      setStatus("Loading leaderboard...");
-
-      try {
-        const data = await api("/api/leaderboard");
-        if (current !== requestNumber) return;
-        state.leaderboard = data.leaderboard || [];
-        render();
-      } catch (error) {
-        if (current !== requestNumber) return;
-        setStatus(error.message, true);
-        grid.innerHTML = "";
+        dishesRoot.innerHTML = "";
       }
     }
 
     async function runSearch(query) {
       const current = ++requestNumber;
       const text = query.trim();
-      state.view = "recipes";
       state.query = text;
 
       if (!text) {
@@ -471,8 +618,23 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
       } catch (error) {
         if (current !== requestNumber) return;
         setStatus(error.message, true);
-        grid.innerHTML = "";
+        dishesRoot.innerHTML = "";
       }
+    }
+
+    function ratingRows(recipe) {
+      const ratings = recipe.ratings || [];
+      if (!ratings.length) return '<p class="meta">No ratings yet.</p>';
+
+      return ratings.map((rating) => {
+        const proof = imageUrl(rating.proofImageRef);
+        return '<div class="rating-row">' +
+          '<span class="stars">' + stars(rating.stars) + "</span>" +
+          '<span>' + escapeHtml(rating.userName || ("user " + rating.userId)) + "</span>" +
+          (proof ? '<img src="' + escapeHtml(proof) + '" alt="Proof photo">' : "") +
+          '<span class="meta">' + rating.stars + "/5</span>" +
+          "</div>";
+      }).join("");
     }
 
     function detailHtml(recipe) {
@@ -482,6 +644,7 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
         .map((item) => "<li>" + escapeHtml(item) + "</li>").join("");
       const rated = Number(recipe.ratingCount) > 0;
       const time = recipe.cookingTime ? recipe.cookingTime + " min" : "No time set";
+      const owner = recipe.ownerName ? "by " + recipe.ownerName : "";
 
       let youtube = "";
       try {
@@ -494,10 +657,17 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
         // An empty or invalid link is simply not shown.
       }
 
+      const photo = imageUrl(recipe.imageRef);
+
       return `
+        ${photo
+          ? '<img class="detail-photo" src="' + escapeHtml(photo) +
+            '" alt="' + escapeHtml(recipe.title) + '">'
+          : placeholder(recipe.title, "placeholder detail-placeholder")}
         <span class="dish">${escapeHtml(recipe.dish || "Recipe")}</span>
         <h2>${escapeHtml(recipe.title)}</h2>
         <div class="detail-meta">
+          <span>${escapeHtml(owner)}</span>
           <span>${escapeHtml(time)}</span>
           <span>${escapeHtml(recipe.mainIngredient || "Ingredient not set")}</span>
           <span><span class="stars">${rated ? stars(recipe.averageRating) : "☆☆☆☆☆"}</span>
@@ -509,6 +679,8 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
         <ul>${ingredients || "<li>No ingredients listed.</li>"}</ul>
         <h3>Steps</h3>
         <ol>${steps || "<li>No steps listed.</li>"}</ol>
+        <h3>Ratings</h3>
+        ${ratingRows(recipe)}
         ${youtube}`;
     }
 
@@ -525,21 +697,9 @@ inline constexpr const char* kIndexHtml = R"HTML(<!doctype html>
       }
     }
 
-    grid.addEventListener("click", (event) => {
+    dishesRoot.addEventListener("click", (event) => {
       const card = event.target.closest(".card");
       if (card) openDetail(card.dataset.id);
-    });
-
-    document.querySelectorAll(".tab").forEach((tab) => {
-      tab.addEventListener("click", () => {
-        clearTimeout(searchTimer);
-        searchInput.value = "";
-        if (tab.dataset.view === "leaderboard") {
-          loadLeaderboard();
-        } else {
-          loadRecipes();
-        }
-      });
     });
 
     searchInput.addEventListener("input", () => {

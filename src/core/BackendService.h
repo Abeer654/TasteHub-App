@@ -2,10 +2,11 @@
 #define BACKENDSERVICE_H
 
 // ============================================================
-//  BackendService.h - Stage 1 backend facade
+//  BackendService.h - the backend facade used by console and HTTP
 //
-//  This is the layer the HTTP server will call in Stage 2. It hides the
-//  RecipeDatabase details and returns JSON in the shape documented in API.md.
+//  All recipe, account, storage, search and AI logic lives behind this
+//  class. The HTTP layer only turns requests into calls and JSON is the
+//  only data shape that leaves this file.
 //
 //  Important design choices:
 //    - One mutex protects the whole database. cpp-httplib handles requests on
@@ -13,10 +14,10 @@
 //    - The service returns JSON copies, never references to in-memory recipes.
 //      That keeps a response safe after the lock is released.
 //    - Every mutation saves immediately. Saves are atomic inside
-//      RecipeDatabase::save() (temp file + rename).
-//    - Search is implemented in the shared Search.h matcher, using exact,
-//      plural, prefix and Damerau-Levenshtein scoring for typo tolerance.
-//      The HTTP layer only formats the ranked results as JSON.
+//      RecipeDatabase::save() and UserDatabase::save().
+//    - Authentication uses the existing UserDatabase session hash. A bearer
+//      token is random, only its SHA-256 hash is stored, and one account has
+//      one active session.
 // ============================================================
 
 #include <filesystem>
@@ -26,10 +27,9 @@
 #include <stdexcept>
 #include "AiRecipe.h"
 #include "Search.h"
+#include "Storage.h"
 
-// Carries the HTTP status code that Stage 2 should send to the client.
-// Keeping the status attached to the error means the future server does not
-// have to translate error messages back into status codes.
+// Carries the HTTP status code that the server should send to the client.
 class ApiException : public std::runtime_error {
 public:
     int status;
@@ -40,88 +40,184 @@ public:
 
 class BackendService {
 public:
-    // The demo has no login. Every rating acts as this user.
-    static constexpr int DEMO_USER_ID = 1;
-
-    // Build the service, make sure the data folder exists, copy the seed on
-    // first run, then load the JSON database into memory.
+    // Build the service, make sure the data folder exists, copy the tracked
+    // seed files on first run, then load the JSON databases into memory.
     //
-    // dataDir is usually "data". seedFile is optional and exists mainly so
-    // backend_test can point at seed/recipes.json while using its own test
-    // directory instead of touching the real runtime data.
+    // dataDir is usually "data". seedFile and usersSeedFile are optional and
+    // exist mainly so backend_test can use its own test directory instead of
+    // touching the real runtime data.
     //
     // recipeExtractor is optional too: production uses Gemini, while tests
     // inject a fake extractor so they never touch the network.
     explicit BackendService(string dataDir, string seedFile = "",
-                            std::shared_ptr<RecipeExtractor> recipeExtractor = nullptr)
-        : db(dataDir), extractor(std::move(recipeExtractor)) {
+                            std::shared_ptr<RecipeExtractor> recipeExtractor = nullptr,
+                            string usersSeedFile = "")
+        : db(dataDir), users(dataDir), extractor(std::move(recipeExtractor)) {
         if(!extractor) extractor = std::make_shared<GeminiRecipeExtractor>();
         if(dataDir.empty()) dataDir = ".";
 
         std::filesystem::path dataPath(dataDir);
         std::filesystem::create_directories(dataPath);
 
-        std::filesystem::path dataFile = dataPath / "recipes.json";
-        std::filesystem::path seedPath = seedFile.empty()
-            ? dataPath.parent_path() / "seed" / "recipes.json"
+        std::filesystem::path seedFolder =
+            dataPath.parent_path() / "seed";
+
+        std::filesystem::path recipeSeed = seedFile.empty()
+            ? seedFolder / "recipes.json"
             : std::filesystem::path(seedFile);
 
-        // On a fresh clone (or after reset-demo), data/recipes.json may not
-        // exist yet. Copy the tracked seed so the demo always starts with data.
-        bool needSeed = !std::filesystem::exists(dataFile);
-        if(!needSeed){
-            try {
-                needSeed = std::filesystem::file_size(dataFile) == 0;
-            }
-            catch(...) {
-                needSeed = true;
-            }
-        }
+        std::filesystem::path userSeed = usersSeedFile.empty()
+            ? seedFolder / "users.json"
+            : std::filesystem::path(usersSeedFile);
 
-        if(needSeed && std::filesystem::exists(seedPath)){
-            std::filesystem::copy_file(seedPath, dataFile,
-                                       std::filesystem::copy_options::overwrite_existing);
-        }
+        copySeedWhenRuntimeFileIsMissing(dataPath / "recipes.json", recipeSeed);
+        copySeedWhenRuntimeFileIsMissing(dataPath / "users.json", userSeed);
 
         if(!db.load()){
             throw ApiException(500, "Could not load recipes");
         }
+        if(!users.load()){
+            throw ApiException(500, "Could not load users");
+        }
     }
 
-    // GET /api/health - cheap readiness check for Stage 2.
+    // GET /api/health - cheap readiness check.
     json health(){
         std::lock_guard<std::mutex> lock(mutex);
-        return json{{"status", "ok"}, {"recipes", countRecipes()}};
+        return json{{"status", "ok"},
+                    {"recipes", countRecipes()},
+                    {"users", users.getUsers().size()}};
     }
 
-    // GET /api/recipes - every recipe as a summary (no ingredients/steps).
-    json listRecipes(){
+    // ------------------------------------------------------------
+    //  Authentication
+    // ------------------------------------------------------------
+
+    // POST /api/auth/signup - create an account and log it in immediately.
+    json signup(const json& body){
         std::lock_guard<std::mutex> lock(mutex);
+        ensureObject(body);
+
+        string username = readString(body, "username", true, "");
+        string password = readString(body, "password", true, "");
+
+        if(!isValidUsername(username)){
+            throw ApiException(400,
+                "Username must be 3-20 characters and start with a letter or number");
+        }
+        if(password.size() < 6 || password.size() > 64){
+            throw ApiException(400, "Password must be 6-64 characters");
+        }
+        if(users.findIndexByUsername(username) != -1){
+            throw ApiException(409, "This username is already taken");
+        }
+
+        UserDatabase rollback = users;
+        User user;
+        user.setId(users.nextUserId());
+        user.setUsername(username);
+        user.autoSetDate();
+        user.setPassword(password);
+
+        string token = randomHex(24);
+        user.startSession(token);
+        users.addUser(user);
+
+        if(!users.save()){
+            users = rollback;
+            throw ApiException(500, "Could not save the account");
+        }
+
+        return authJson(users.getUsers().back(), token);
+    }
+
+    // POST /api/auth/login - password login with one active session.
+    json login(const json& body){
+        std::lock_guard<std::mutex> lock(mutex);
+        ensureObject(body);
+
+        string username = readString(body, "username", true, "");
+        string password = readString(body, "password", true, "");
+        int index = users.findIndexByUsername(username);
+
+        if(index == -1 || !users.getUsers()[index].checkPassword(password)){
+            throw ApiException(401, "Wrong username or password");
+        }
+
+        UserDatabase rollback = users;
+        User& user = users.getUsers()[index];
+        string token = randomHex(24);
+        user.startSession(token);      // a second login replaces the first session
+
+        if(!users.save()){
+            users = rollback;
+            throw ApiException(500, "Could not save the login");
+        }
+
+        return authJson(user, token);
+    }
+
+    // POST /api/auth/logout - forget this device's session.
+    json logout(const string& token){
+        std::lock_guard<std::mutex> lock(mutex);
+        int userId = requireUserId(token);
+        int index = users.findIndexById(userId);
+
+        UserDatabase rollback = users;
+        users.getUsers()[index].endSession();
+        if(!users.save()){
+            users = rollback;
+            throw ApiException(500, "Could not log out");
+        }
+
+        return json{{"loggedOut", true}};
+    }
+
+    // GET /api/auth/me - validate the token and return the account.
+    json me(const string& token){
+        std::lock_guard<std::mutex> lock(mutex);
+        int userId = requireUserId(token);
+        int index = users.findIndexById(userId);
+        return json{{"user", userJson(users.getUsers()[index])}};
+    }
+
+    // ------------------------------------------------------------
+    //  Recipe reads (public; a token only personalises myRating)
+    // ------------------------------------------------------------
+
+    json listRecipes(const string& token = ""){
+        std::lock_guard<std::mutex> lock(mutex);
+        int viewerId = userIdForToken(token);
 
         json result = json::array();
         for(Dish &dish : db.getDishes()){
             for(Variant &variant : dish.getVariants()){
-                result.push_back(summaryJson(dish, variant));
+                result.push_back(summaryJson(dish, variant, viewerId));
             }
         }
         return result;
     }
 
-    // GET /api/recipes/:id - one full recipe, including ratings and proof images.
-    json getRecipe(int id){
+    json getRecipe(int id, const string& token = ""){
         std::lock_guard<std::mutex> lock(mutex);
+        int viewerId = userIdForToken(token);
 
         RecipeRef ref = requireRecipe(id);
         Dish &dish = db.getDishes()[ref.dishIndex];
         Variant &variant = dish.getVariants()[ref.variantIndex];
-        return detailJson(dish, variant);
+        return detailJson(dish, variant, viewerId);
     }
+
+    // ------------------------------------------------------------
+    //  Recipe writes (login required)
+    // ------------------------------------------------------------
 
     // body follows the POST /api/recipes shape in API.md.
     // A recipe is a Variant inside a Dish. If the dish does not exist yet,
     // it is created automatically.
-    json addRecipe(const json& body){
+    json addRecipe(const json& body, const string& token){
         std::lock_guard<std::mutex> lock(mutex);
+        int userId = requireUserId(token);
         ensureObject(body);
 
         // 1. Validate and normalize the request before touching the database.
@@ -168,7 +264,7 @@ public:
         Variant variant;
         variant.setId(db.nextVariantId());
         variant.setName(tidyName(title));
-        variant.setOwnerId(DEMO_USER_ID);
+        variant.setOwnerId(userId);
         variant.autoSetDate();
         variant.getRecipe().setMainIngredient(tidyName(mainIngredient));
         variant.getRecipe().setIngredients(ingredients);
@@ -180,24 +276,24 @@ public:
         dish.addVariant(variant);
         saveOrThrow(rollbackState);
 
-        return detailJson(dish, dish.getVariants().back());
+        return detailJson(dish, dish.getVariants().back(), userId);
     }
 
     // Partial update. Fields that are absent stay unchanged.
-    // "dish" cannot be changed after creation.
-    json updateRecipe(int id, const json& body){
+    // Only the recipe owner may edit it; dish cannot change after creation.
+    json updateRecipe(int id, const json& body, const string& token){
         std::lock_guard<std::mutex> lock(mutex);
+        int userId = requireUserId(token);
         ensureObject(body);
 
         RecipeRef ref = requireRecipe(id);
         Dish &dish = db.getDishes()[ref.dishIndex];
         Variant &variant = dish.getVariants()[ref.variantIndex];
+        requireOwner(variant, userId, "edit");
 
         // Validate every supplied field before changing anything. A rejected
         // request must never leave a partially updated recipe in memory.
         if(body.contains("dish")){
-            // Moving a recipe to another dish would change its identity, so
-            // only accept the current dish name (or no dish field at all).
             string requestedDish = tidyName(readString(body, "dish", false, ""));
             if(!requestedDish.empty()
                && toLowerCase(requestedDish) != toLowerCase(dish.getName())){
@@ -209,7 +305,6 @@ public:
         string title;
         if(hasTitle){
             title = tidyName(readString(body, "title", true, ""));
-            // Case-insensitive duplicate check, but a recipe may keep its own title.
             if(toLowerCase(title) != toLowerCase(variant.getName())
                && dish.hasVariant(title)){
                 throw ApiException(409, "A recipe with this title already exists in this dish");
@@ -253,8 +348,6 @@ public:
             youtubeUrl = readString(body, "youtubeUrl", false, "");
         }
 
-        // Apply the validated values. Only real changes count, so an update
-        // that sends identical data does not rewrite the file.
         RecipeDatabase rollbackState = db;
         bool changed = false;
 
@@ -292,13 +385,18 @@ public:
             saveOrThrow(rollbackState);
         }
 
-        return detailJson(dish, variant);
+        return detailJson(dish, variant, userId);
     }
 
-    json deleteRecipe(int id){
+    json deleteRecipe(int id, const string& token){
         std::lock_guard<std::mutex> lock(mutex);
+        int userId = requireUserId(token);
 
         RecipeRef ref = requireRecipe(id);
+        Dish &dish = db.getDishes()[ref.dishIndex];
+        Variant &variant = dish.getVariants()[ref.variantIndex];
+        requireOwner(variant, userId, "delete");
+
         RecipeDatabase rollbackState = db;
 
         // removeVariant also drops the dish when its last recipe is removed.
@@ -310,10 +408,12 @@ public:
     // Rate a recipe 1-5. proofImageRef is optional:
     //   - omitted (std::nullopt): keep the existing proof photo
     //   - provided: replace it; an empty string clears it
-    // This supports "I cooked this recipe, here is my photo proof".
+    // Any logged-in user may rate, including the recipe owner.
     json rateRecipe(int id, int stars,
-                    std::optional<string> proofImageRef = std::nullopt){
+                    std::optional<string> proofImageRef,
+                    const string& token){
         std::lock_guard<std::mutex> lock(mutex);
+        int userId = requireUserId(token);
 
         if(stars < 1 || stars > 5){
             throw ApiException(400, "stars must be between 1 and 5");
@@ -326,35 +426,33 @@ public:
         bool changed = false;
         if(proofImageRef.has_value()){
             string proof = trimSpaces(*proofImageRef);
-            changed = variant.getRatings().setRatingWithProof(DEMO_USER_ID, stars, proof);
+            changed = variant.getRatings().setRatingWithProof(userId, stars, proof);
         }
         else {
-            changed = variant.getRatings().setRating(DEMO_USER_ID, stars);
+            changed = variant.getRatings().setRating(userId, stars);
         }
 
         if(changed) saveOrThrow(rollbackState);
-        return ratingJson(variant);
+        return ratingJson(variant, userId);
     }
 
     // Typo-tolerant search across dish name, recipe title, main ingredient,
     // ingredients and steps. Every query word must match something.
-    json searchRecipes(const string& query){
+    json searchRecipes(const string& query, const string& token = ""){
         std::lock_guard<std::mutex> lock(mutex);
+        int viewerId = userIdForToken(token);
 
-        // findRecipeMatches() lives in Search.h so the console programs and
-        // the future HTTP server all share exactly the same ranking rules.
         json results = json::array();
         for(RecipeSearchHit &hit : findRecipeMatches(db, query)){
             Dish &dish = db.getDishes()[hit.ref.dishIndex];
             Variant &variant = dish.getVariants()[hit.ref.variantIndex];
-            results.push_back(summaryJson(dish, variant));
+            results.push_back(summaryJson(dish, variant, viewerId));
         }
         return json{{"query", query}, {"results", results}};
     }
 
     // POST /api/recipes/parse - turn a natural-language description into a
-    // draft recipe. It does NOT save anything: the client shows the draft,
-    // the user confirms or edits it, then calls POST /api/recipes.
+    // draft recipe. It does NOT save anything.
     json parseRecipeText(const string& text){
         string cleaned = trimSpaces(text);
         if(cleaned.size() < 10){
@@ -380,10 +478,18 @@ public:
         }
     }
 
-    // GET /api/leaderboard - rated recipes only, best average first.
-    // A recipe with no ratings has no place on a leaderboard.
-    json leaderboard(){
+    // GET /api/leaderboard?dish=...
+    //
+    // Ranking inside one dish: rated recipes first by average descending,
+    // then rating count descending, then newest first. Unrated recipes follow
+    // with rank 0 so the app can show them as "New". Without a dish filter the
+    // result is the old global list of rated recipes.
+    json leaderboard(const string& requestedDish = "", const string& token = ""){
         std::lock_guard<std::mutex> lock(mutex);
+        int viewerId = userIdForToken(token);
+
+        string dishFilter = tidyName(requestedDish);
+        bool oneDish = !dishFilter.empty();
 
         struct Entry {
             double averageRating;
@@ -391,19 +497,27 @@ public:
             string createdAt;
             json summary;
         };
-        vector<Entry> entries;
+        vector<Entry> rated;
+        vector<Entry> unrated;
 
         for(Dish &dish : db.getDishes()){
+            if(oneDish && toLowerCase(dish.getName()) != toLowerCase(dishFilter)){
+                continue;
+            }
             for(Variant &variant : dish.getVariants()){
-                if(variant.getRatings().count() == 0) continue;
-                entries.push_back(Entry{variant.getRatings().average(),
-                                        variant.getRatings().count(),
-                                        variant.getCreatedAt(),
-                                        summaryJson(dish, variant)});
+                Entry entry{variant.getRatings().average(),
+                            variant.getRatings().count(),
+                            variant.getCreatedAt(),
+                            summaryJson(dish, variant, viewerId)};
+                if(entry.ratingCount == 0){
+                    if(oneDish) unrated.push_back(entry);
+                }
+                else {
+                    rated.push_back(entry);
+                }
             }
         }
 
-        // Average first, then number of ratings, then newest recipe.
         auto betterEntryFirst = [](const Entry& a, const Entry& b){
             if(a.averageRating != b.averageRating){
                 return a.averageRating > b.averageRating;
@@ -413,27 +527,105 @@ public:
             }
             return a.createdAt > b.createdAt;
         };
-        std::sort(entries.begin(), entries.end(), betterEntryFirst);
+        std::sort(rated.begin(), rated.end(), betterEntryFirst);
+
+        auto newestFirst = [](const Entry& a, const Entry& b){
+            return a.createdAt > b.createdAt;
+        };
+        std::sort(unrated.begin(), unrated.end(), newestFirst);
 
         json list = json::array();
         int rank = 1;
-        for(Entry &entry : entries){
-            json item;
-            item["rank"] = rank++;
-            item["recipe"] = entry.summary;
-            item["averageRating"] = entry.averageRating;
-            item["ratingCount"] = entry.ratingCount;
-            list.push_back(item);
+        for(Entry &entry : rated){
+            list.push_back(leaderboardEntryJson(entry.summary, rank++,
+                                                entry.averageRating,
+                                                entry.ratingCount, false));
         }
-        return json{{"leaderboard", list}};
+        if(oneDish){
+            for(Entry &entry : unrated){
+                list.push_back(leaderboardEntryJson(entry.summary, 0,
+                                                    entry.averageRating, 0, true));
+            }
+        }
+
+        json result{{"leaderboard", list}};
+        if(oneDish) result["dish"] = dishFilter;
+        return result;
     }
 
 private:
     RecipeDatabase db;
+    UserDatabase users;
     std::shared_ptr<RecipeExtractor> extractor;
-    std::mutex mutex;   // guards db and the extractor pointer
+    std::mutex mutex;   // guards db, users and the extractor pointer
 
     // ---- Internal helpers (the caller already holds mutex) ----
+
+    static void copySeedWhenRuntimeFileIsMissing(
+        const std::filesystem::path& runtimeFile,
+        const std::filesystem::path& seedFile){
+        if(!std::filesystem::exists(seedFile)) return;
+
+        bool missing = !std::filesystem::exists(runtimeFile);
+        if(!missing){
+            try {
+                missing = std::filesystem::file_size(runtimeFile) == 0;
+            }
+            catch(...) {
+                missing = true;
+            }
+        }
+
+        if(missing){
+            std::filesystem::copy_file(
+                seedFile, runtimeFile,
+                std::filesystem::copy_options::overwrite_existing);
+        }
+    }
+
+    json userJson(User& user){
+        return json{{"id", user.getId()}, {"username", user.getUsername()}};
+    }
+
+    json authJson(User& user, const string& token){
+        return json{{"token", token}, {"user", userJson(user)}};
+    }
+
+    // 0 means anonymous. A random or stale token therefore behaves like a
+    // public read instead of breaking browsing after a demo reset.
+    int userIdForToken(const string& token){
+        if(token.empty()) return 0;
+        for(User &user : users.getUsers()){
+            if(user.checkSession(token)) return user.getId();
+        }
+        return 0;
+    }
+
+    int requireUserId(const string& token){
+        int userId = userIdForToken(token);
+        if(userId == 0){
+            throw ApiException(401, "Login required");
+        }
+        return userId;
+    }
+
+    void requireOwner(Variant& variant, int userId, const string& action){
+        if(variant.getOwnerId() != userId){
+            throw ApiException(403, "Only the recipe owner can " + action + " this recipe");
+        }
+    }
+
+    json leaderboardEntryJson(const json& recipe, int rank,
+                              double averageRating, int ratingCount,
+                              bool isNew){
+        json item;
+        item["rank"] = rank;
+        item["recipe"] = recipe;
+        item["averageRating"] = averageRating;
+        item["ratingCount"] = ratingCount;
+        item["isNew"] = isNew;
+        return item;
+    }
 
     // Response of POST /api/recipes/parse. "recipe" is exactly the object
     // POST /api/recipes accepts, so the client can preview then save it.
@@ -465,7 +657,7 @@ private:
         return count;
     }
 
-    // Find a recipe or convert "not found" into the error Stage 2 will send.
+    // Find a recipe or convert "not found" into the API error.
     RecipeRef requireRecipe(int id){
         RecipeRef ref = db.findVariantById(id);
         if(ref.dishIndex < 0){
@@ -549,25 +741,27 @@ private:
 
     // Rating fields shared by summaries and the rating endpoint. Keeping them
     // in one place guarantees list/search/detail/rate all report the same numbers.
-    void addRatingFields(json& j, Variant& variant){
+    void addRatingFields(json& j, Variant& variant, int viewerId){
         j["averageRating"] = variant.getRatings().average();
         j["ratingCount"] = variant.getRatings().count();
-        j["myRating"] = variant.getRatings().getRating(DEMO_USER_ID);
+        j["myRating"] = variant.getRatings().getRating(viewerId);
         j["myRatingProofImageRef"] =
-            variant.getRatings().getProofImageRef(DEMO_USER_ID);
+            variant.getRatings().getProofImageRef(viewerId);
     }
 
-    // The JSON shape used by list, search and leaderboard.
-    json summaryJson(Dish& dish, Variant& variant){
+    // The JSON shape used by list, search, dish rankings and leaderboard.
+    json summaryJson(Dish& dish, Variant& variant, int viewerId){
         json j;
         j["id"] = variant.getId();
         j["title"] = variant.getName();
         j["dish"] = dish.getName();
+        j["ownerId"] = variant.getOwnerId();
+        j["ownerName"] = users.nameOf(variant.getOwnerId());
         j["mainIngredient"] = variant.getRecipe().getMainIngredient();
         j["cookingTime"] = variant.getRecipe().getCookingTime();
         j["imageRef"] = variant.getImageRef();
         j["youtubeUrl"] = variant.getYoutubeUrl();
-        addRatingFields(j, variant);
+        addRatingFields(j, variant, viewerId);
         j["createdAt"] = variant.getCreatedAt();
 
         if(variant.getUpdatedAt().empty()){
@@ -579,19 +773,29 @@ private:
         return j;
     }
 
-    // Detail = summary + ingredients + steps + all ratings (with proof images).
-    json detailJson(Dish& dish, Variant& variant){
-        json j = summaryJson(dish, variant);
+    // Detail = summary + ingredients + steps + all ratings with usernames.
+    json detailJson(Dish& dish, Variant& variant, int viewerId){
+        json j = summaryJson(dish, variant, viewerId);
         j["ingredients"] = variant.getRecipe().getIngredients();
         j["steps"] = variant.getRecipe().getSteps();
-        j["ratings"] = variant.getRatings().toJson();
+
+        json ratings = json::array();
+        for(Rating &rating : variant.getRatings().getList()){
+            json item;
+            item["userId"] = rating.userId;
+            item["userName"] = users.nameOf(rating.userId);
+            item["stars"] = rating.stars;
+            item["proofImageRef"] = rating.proofImageRef;
+            ratings.push_back(item);
+        }
+        j["ratings"] = ratings;
         return j;
     }
 
     // Response of PUT /api/recipes/:id/rating.
-    json ratingJson(Variant& variant){
+    json ratingJson(Variant& variant, int viewerId){
         json j;
-        addRatingFields(j, variant);
+        addRatingFields(j, variant, viewerId);
         return j;
     }
 };

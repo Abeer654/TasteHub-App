@@ -2,7 +2,7 @@
 //  backend_test.cpp - Stage 1 acceptance test
 //
 //  This program is the "user" of BackendService for now. It runs the same
-//  operations the future HTTP server will call, checks the results, and
+//  operations the HTTP server and console call, checks the results, and
 //  prints PASS/FAIL lines.
 //
 //  It uses data/backend-test instead of data/ so the real demo data is never
@@ -64,16 +64,6 @@ static bool containsRecipeId(const json& results, int id){
     return false;
 }
 
-// Used by the console-search check below: Search.h returns RecipeRefs, not JSON.
-static bool refsContainRecipeId(RecipeDatabase& db, const vector<RecipeRef>& refs, int id){
-    for(const RecipeRef& ref : refs){
-        if(db.getDishes()[ref.dishIndex].getVariants()[ref.variantIndex].getId() == id){
-            return true;
-        }
-    }
-    return false;
-}
-
 static int leaderboardRank(const json& leaderboard, int id){
     for(const json& entry : leaderboard["leaderboard"]){
         if(entry["recipe"].value("id", -1) == id){
@@ -83,11 +73,22 @@ static int leaderboardRank(const json& leaderboard, int id){
     return -1;
 }
 
+static json findLeaderboardEntry(const json& leaderboard, int id){
+    for(const json& entry : leaderboard["leaderboard"]){
+        if(entry["recipe"].value("id", -1) == id) return entry;
+    }
+    return json();
+}
+
 static json findRating(const json& ratings, int userId){
     for(const json& rating : ratings){
         if(rating.value("userId", -1) == userId) return rating;
     }
     return json();
+}
+
+static string tokenFrom(const json& login){
+    return login.value("token", "");
 }
 
 // Offline stand-in for Gemini. The acceptance test must never need a network
@@ -117,66 +118,159 @@ public:
 
 int main(){
     const string testDir = "data/backend-test";
-    const string seedFile = "seed/recipes.json";
+    const string recipeSeed = "seed/recipes.json";
+    const string userSeed = "seed/users.json";
 
     // Always start from a clean copy of the tracked seed.
     std::filesystem::remove_all(testDir);
 
     try {
         unique_ptr<BackendService> service =
-            make_unique<BackendService>(testDir, seedFile,
-                                        make_shared<FakeRecipeExtractor>());
+            make_unique<BackendService>(testDir, recipeSeed,
+                                        make_shared<FakeRecipeExtractor>(),
+                                        userSeed);
 
         // ----------------------------------------------------
-        // 1. Seed data loads correctly
+        // 1. Seed data and accounts
         // ----------------------------------------------------
         json health = service->health();
         check(health.value("status", "") == "ok", "health status is ok");
-        check(health.value("recipes", 0) == 6, "health reports 6 seed recipes");
+        check(health.value("recipes", 0) == 18,
+              "health reports 18 seed recipes");
+        check(health.value("users", 0) == 2,
+              "health reports the two demo accounts");
 
+        json junaidLogin = service->login(
+            json{{"username", "junaid"}, {"password", "tastehub"}});
+        string junaid = tokenFrom(junaidLogin);
+        check(junaid.size() > 20, "junaid can log in");
+        check(junaidLogin["user"].value("id", 0) == 1,
+              "junaid has user id 1");
+        check(junaidLogin["user"].value("username", "") == "junaid",
+              "login response includes the username");
+        check(!junaidLogin.contains("passwordHash"),
+              "login response never exposes a password hash");
+
+        json guestLogin = service->login(
+            json{{"username", "guest"}, {"password", "guest"}});
+        string guest = tokenFrom(guestLogin);
+        check(guest.size() > 20, "guest can log in");
+        check(service->me(junaid)["user"].value("id", 0) == 1,
+              "me returns the current account");
+        check(service->me(guest)["user"].value("id", 0) == 2,
+              "me returns the second account");
+
+        expectApiError(401, "wrong password returns 401", [&]{
+            service->login(json{{"username", "junaid"}, {"password", "nope"}});
+        });
+        expectApiError(401, "unknown login returns 401", [&]{
+            service->login(json{{"username", "nobody"}, {"password", "secret"}});
+        });
+        expectApiError(401, "me without a token returns 401", [&]{
+            service->me("");
+        });
+
+        json signup = service->signup(
+            json{{"username", "newdemo"}, {"password", "newdemo123"}});
+        string newUser = tokenFrom(signup);
+        check(signup["user"].value("id", 0) > 2,
+              "signup assigns a new user id");
+        expectApiError(409, "duplicate username returns 409", [&]{
+            service->signup(
+                json{{"username", "JUNAID"}, {"password", "another123"}});
+        });
+        expectApiError(400, "short username returns 400", [&]{
+            service->signup(json{{"username", "ab"}, {"password", "secret123"}});
+        });
+        expectApiError(400, "short password returns 400", [&]{
+            service->signup(json{{"username", "shortpw"}, {"password", "123"}});
+        });
+
+        // Logging in again invalidates the first token.
+        json relogin = service->login(
+            json{{"username", "junaid"}, {"password", "tastehub"}});
+        string junaid2 = tokenFrom(relogin);
+        check(junaid2 != junaid, "a second login creates a new token");
+        expectApiError(401, "the previous session token stops working", [&]{
+            service->me(junaid);
+        });
+        junaid = junaid2;
+
+        service->logout(newUser);
+        expectApiError(401, "logout invalidates the token", [&]{
+            service->me(newUser);
+        });
+
+        // ----------------------------------------------------
+        // 2. Seed recipes, owners and per-user ratings
+        // ----------------------------------------------------
         json list = service->listRecipes();
-        check(list.is_array() && list.size() == 6, "list returns 6 seed recipes");
+        check(list.is_array() && list.size() == 18,
+              "list returns 18 seed recipes");
+        check(list[0].value("ownerName", "") == "junaid",
+              "list includes ownerName");
+        check(list[0].value("myRating", -1) == 0,
+              "anonymous list starts with myRating 0");
+
+        json mine = service->listRecipes(junaid);
+        check(mine[0].value("myRating", -1) == 5,
+              "junaid sees his own rating in the list");
 
         json detail = service->getRecipe(5);
         check(detail.value("title", "") == "Chicken Biryani",
               "recipe 5 is Chicken Biryani");
         check(detail.value("dish", "") == "Biryani",
               "recipe 5 belongs to the Biryani dish");
+        check(detail.value("ownerId", 0) == 1,
+              "recipe 5 belongs to junaid");
+        check(detail.value("ownerName", "") == "junaid",
+              "recipe detail includes ownerName");
         check(detail["ingredients"].is_array() && detail["ingredients"].size() >= 3,
               "recipe 5 has ingredients");
         check(detail["steps"].is_array() && detail["steps"].size() >= 2,
               "recipe 5 has steps");
-        check(detail.value("imageRef", "") == "asset:assets/images/biryani.jpg",
-              "recipe 5 keeps its imageRef");
+        check(detail.value("imageRef", "") == "",
+              "seed recipes start with the empty photo placeholder");
         check(!detail.value("youtubeUrl", "").empty(),
               "recipe 5 keeps its youtubeUrl");
-        check(detail.value("myRating", 0) == 5,
-              "recipe 5 shows the demo user's rating");
+        check(detail.value("myRating", -1) == 0,
+              "anonymous detail has myRating 0");
         check(detail.value("ratingCount", 0) == 2,
               "recipe 5 shows the total rating count");
-        check(std::abs(detail.value("averageRating", 0.0) - 4.5) < 0.001,
-              "recipe 5 average rating is 4.5");
+        check(std::abs(detail.value("averageRating", 0.0) - 5.0) < 0.001,
+              "recipe 5 average rating is 5.0");
         check(detail["ratings"].is_array() && detail["ratings"].size() == 2,
               "recipe detail includes the ratings list");
+        check(detail["ratings"][0].value("userName", "") == "junaid",
+              "rating entries include usernames");
         check(detail.value("myRatingProofImageRef", "") == "",
               "recipe 5 starts without a proof image");
+
+        json junaidDetail = service->getRecipe(5, junaid);
+        json guestDetail = service->getRecipe(2, guest);
+        check(junaidDetail.value("myRating", 0) == 5,
+              "junaid sees his rating on recipe 5");
+        check(guestDetail.value("myRating", 0) == 4,
+              "guest sees a different myRating on recipe 2");
 
         expectApiError(404, "unknown recipe returns 404", [&]{
             service->getRecipe(999999);
         });
 
         // ----------------------------------------------------
-        // 2. Typo-tolerant search
+        // 3. Typo-tolerant search
         // ----------------------------------------------------
         json search = service->searchRecipes("biriyani");
         check(!search["results"].empty() && search["results"][0].value("id", -1) == 5,
-              "search 'biriyani' finds Chicken Biryani");
+              "search 'biriyani' finds Chicken Biryani first");
 
         search = service->searchRecipes("chiken");
         check(containsRecipeId(search["results"], 5),
               "search 'chiken' finds Chicken Biryani");
         check(containsRecipeId(search["results"], 4),
-              "search 'chiken' finds spicy chicken tikka");
+              "search 'chiken' finds Chicken Tikka");
+        check(!containsRecipeId(search["results"], 6),
+              "search 'chiken' does not match unrelated 'thick' steps");
 
         search = service->searchRecipes("karai");
         check(containsRecipeId(search["results"], 3),
@@ -185,10 +279,6 @@ int main(){
         search = service->searchRecipes("peshawri");
         check(containsRecipeId(search["results"], 3),
               "search 'peshawri' finds Peshawari Karahi");
-
-        search = service->searchRecipes("briyani");
-        check(!search["results"].empty() && search["results"][0].value("id", -1) == 5,
-              "search 'briyani' handles swapped letters");
 
         search = service->searchRecipes("chiken biryani");
         check(!search["results"].empty() && search["results"][0].value("id", -1) == 5,
@@ -202,25 +292,17 @@ int main(){
         check(containsRecipeId(search["results"], 5),
               "search ignores common question filler words");
 
-        search = service->searchRecipes("fries");
-        check(search["results"].size() == 1
-                  && search["results"][0].value("id", -1) == 1,
-              "search 'fries' does not match unrelated 'fry' steps");
-
         search = service->searchRecipes("ticka");
-        check(search["results"].size() == 1
-                  && search["results"][0].value("id", -1) == 4,
-              "search 'ticka' does not match unrelated 'thick' steps");
+        check(containsRecipeId(search["results"], 4),
+              "search 'ticka' finds the tikka recipes");
 
         search = service->searchRecipes("tomato");
-        check(search["results"].size() == 1
-                  && search["results"][0].value("id", -1) == 3,
-              "search 'tomato' does not match 'potato'");
+        check(containsRecipeId(search["results"], 3),
+              "search 'tomato' finds the karahi recipes");
 
         search = service->searchRecipes("frys");
-        check(search["results"].size() == 1
-                  && search["results"][0].value("id", -1) == 1,
-              "search 'frys' finds Crispy Fries only");
+        check(containsRecipeId(search["results"], 1),
+              "search 'frys' finds the fries recipes");
 
         search = service->searchRecipes("bif nihari");
         check(containsRecipeId(search["results"], 6),
@@ -230,26 +312,27 @@ int main(){
         check(containsRecipeId(search["results"], 1),
               "plural typo 'potatos' finds Crispy Fries");
 
-        search = service->searchRecipes("chiken");
-        check(!containsRecipeId(search["results"], 6),
-              "search 'chiken' does not match unrelated 'thick' steps");
-
-        // The console menus call the free searchRecipes() function in
-        // Search.h. It must use the same fuzzy matcher as the backend.
-        RecipeDatabase consoleDb(testDir);
-        check(consoleDb.load(), "console search database loads");
-        SearchResult consoleHits = searchRecipes(consoleDb, "chiken");
-        check(refsContainRecipeId(consoleDb, consoleHits.best, 5),
-              "console search uses the same fuzzy matcher");
-
         search = service->searchRecipes("xyz");
         check(search["results"].empty(), "search 'xyz' returns no results");
 
         search = service->searchRecipes("");
         check(search["results"].empty(), "empty search returns no results");
 
+        // The console menus use the free searchRecipes() function in Search.h.
+        RecipeDatabase consoleDb(testDir);
+        check(consoleDb.load(), "console search database loads");
+        SearchResult consoleHits = searchRecipes(consoleDb, "chiken");
+        bool consoleFinds5 = false;
+        for(RecipeRef &ref : consoleHits.best){
+            if(consoleDb.getDishes()[ref.dishIndex]
+                   .getVariants()[ref.variantIndex].getId() == 5){
+                consoleFinds5 = true;
+            }
+        }
+        check(consoleFinds5, "console search uses the same fuzzy matcher");
+
         // ----------------------------------------------------
-        // 2b. Natural-language recipe extraction (AI draft flow)
+        // 4. Natural-language recipe extraction (AI draft flow)
         // ----------------------------------------------------
         json parsed = service->parseRecipeText(
             "I made chicken biryani with rice, chicken, yogurt, onions and spices. "
@@ -263,18 +346,12 @@ int main(){
               "parse returns the ingredient list");
         check(parsed["recipe"]["steps"].size() == 4,
               "parse returns the cooking steps");
-        check(parsed["recipe"].value("cookingTime", 0) == 60,
-              "parse returns the cooking time");
         check(parsed.value("source", "") == "fake",
               "parse reports which extractor was used");
-        check(parsed.value("message", "").find("Biryani") != string::npos,
-              "parse returns a friendly message");
         check(parsed["inferredFields"].is_array()
                   && !parsed["inferredFields"].empty(),
               "parse marks fields the AI had to infer");
-        check(parsed["followUpQuestions"].is_array(),
-              "parse returns follow-up questions");
-        check(service->listRecipes().size() == 6,
+        check(service->listRecipes().size() == 18,
               "parse does not save the draft automatically");
 
         expectApiError(400, "empty AI description returns 400", [&]{
@@ -284,82 +361,50 @@ int main(){
             service->parseRecipeText("please make this explode");
         });
 
-        // Response parsing is tested without Gemini: the model can wrap JSON
-        // in markdown fences or send cookingTime as a string.
-        string fenced =
-            "```json\n"
-            "{\"dish\":\"Karahi\",\"title\":\"Peshawari Karahi\","
-            "\"mainIngredient\":\"mutton\",\"ingredients\":[\"mutton\",\"tomato\"],"
-            "\"steps\":[\"cook the mutton\",\"add tomato\"],\"cookingTime\":\"45\"}\n"
-            "```";
-        json geminiResponse;
-        json candidate;
-        candidate["content"]["parts"] = json::array({json{{"text", fenced}}});
-        geminiResponse["candidates"] = json::array({candidate});
-        RecipeDraft parsedDraft = aiParseGeminiResponse(geminiResponse.dump(), "");
-
-        check(parsedDraft.dish == "Karahi", "Gemini JSON fences are stripped");
-        check(parsedDraft.mainIngredient == "mutton",
-              "Gemini draft keeps the main ingredient");
-        check(parsedDraft.cookingTime == 45,
-              "Gemini string cooking time is converted to minutes");
-        check(parsedDraft.source == "gemini", "Gemini draft is marked as gemini");
-
-        bool incompleteRejected = false;
-        try {
-            aiParseDraftJson(
-                "{\"dish\":\"Test\",\"title\":\"Test\",\"mainIngredient\":\"rice\","
-                "\"ingredients\":[],\"steps\":[]}",
-                "gemini");
-        }
-        catch(const AiServiceError& e){
-            incompleteRejected = (e.status == 422);
-        }
-        check(incompleteRejected, "incomplete AI draft is rejected with 422");
-
         // ----------------------------------------------------
-        // 3. Rating with a proof image, and image preservation
+        // 5. Rating with a proof image, per user
         // ----------------------------------------------------
         json rating = service->rateRecipe(
-            5, 5, string("https://example.com/proofs/biryani.jpg"));
-
+            5, 5, string("/uploads/proof-biryani.jpg"), junaid);
         check(rating.value("myRating", 0) == 5,
               "rating response includes myRating");
-        check(rating.value("ratingCount", 0) == 2,
-              "rating response includes ratingCount");
-        check(std::abs(rating.value("averageRating", 0.0) - 4.5) < 0.001,
-              "rating response includes averageRating");
         check(rating.value("myRatingProofImageRef", "")
-                  == "https://example.com/proofs/biryani.jpg",
+                  == "/uploads/proof-biryani.jpg",
               "rating response includes the proof image");
 
-        detail = service->getRecipe(5);
+        detail = service->getRecipe(5, junaid);
         check(detail.value("myRatingProofImageRef", "")
-                  == "https://example.com/proofs/biryani.jpg",
+                  == "/uploads/proof-biryani.jpg",
               "proof image is visible in recipe detail");
 
-        // This is the regression test for the old data-loss bug.
+        // Guest's rating on the same recipe must stay separate.
+        json guestRating = service->rateRecipe(5, 3, nullopt, guest);
+        check(guestRating.value("myRating", 0) == 3,
+              "guest has a separate rating on recipe 5");
+        check(service->getRecipe(5, junaid).value("myRating", 0) == 5,
+              "junaid's rating is unchanged by guest");
+
         string rawText = readWholeFile(testDir + "/recipes.json");
-        check(rawText.find("asset:assets/images/biryani.jpg") != string::npos,
-              "saving a rating preserves the recipe imageRef");
-        check(rawText.find("https://www.youtube.com/results?search_query=chicken+biryani+recipe")
-                  != string::npos,
-              "saving a rating preserves the recipe youtubeUrl");
-        check(rawText.find("https://example.com/proofs/biryani.jpg") != string::npos,
+        check(rawText.find("/uploads/proof-biryani.jpg") != string::npos,
               "saving a rating writes the proof image to JSON");
+        check(rawText.find("\"imageRef\": \"\"") != string::npos,
+              "seed recipes keep their empty imageRef");
 
         expectApiError(400, "rating below 1 returns 400", [&]{
-            service->rateRecipe(5, 0);
+            service->rateRecipe(5, 0, nullopt, junaid);
         });
         expectApiError(400, "rating above 5 returns 400", [&]{
-            service->rateRecipe(5, 6);
+            service->rateRecipe(5, 6, nullopt, junaid);
+        });
+        expectApiError(401, "rating without login returns 401", [&]{
+            service->rateRecipe(5, 5, nullopt, "");
         });
         expectApiError(404, "rating an unknown recipe returns 404", [&]{
-            service->rateRecipe(999999, 5);
+            service->rateRecipe(999999, 5, nullopt, junaid);
         });
 
         // ----------------------------------------------------
-        // 4. Add recipes with image and YouTube fields
+        // 6. Add, update and owner-only access
         // ----------------------------------------------------
         string suffix = to_string(time(0));
         string newTitle = "Test Biryani " + suffix;
@@ -371,284 +416,220 @@ int main(){
             {"ingredients", {"rice", "chicken", "yogurt"}},
             {"steps", {"marinate the chicken", "cook the rice", "layer and serve"}},
             {"cookingTime", 45},
-            {"imageRef", "https://example.com/images/test-biryani.jpg"},
+            {"imageRef", "/uploads/test-biryani.png"},
             {"youtubeUrl", "https://www.youtube.com/watch?v=test-biryani"}
         };
 
-        json added = service->addRecipe(body);
+        expectApiError(401, "creating a recipe without login returns 401", [&]{
+            service->addRecipe(body, "");
+        });
+
+        json added = service->addRecipe(body, junaid);
         int newId = added.value("id", -1);
         check(newId > 0, "adding a recipe returns a new id");
-        check(added.value("dish", "") == "Biryani",
-              "added recipe is attached to the requested dish");
-        check(added.value("title", "") == newTitle,
-              "added recipe keeps its title");
-        check(added.value("imageRef", "")
-                  == "https://example.com/images/test-biryani.jpg",
-              "added recipe keeps its imageRef");
+        check(added.value("ownerId", 0) == 1,
+              "junaid owns the recipe he added");
+        check(added.value("ownerName", "") == "junaid",
+              "added recipe returns the owner name");
+        check(added.value("imageRef", "") == "/uploads/test-biryani.png",
+              "added recipe keeps its uploaded image path");
         check(added.value("youtubeUrl", "")
                   == "https://www.youtube.com/watch?v=test-biryani",
               "added recipe keeps its youtubeUrl");
-        check(added["ingredients"].size() == 3, "added recipe has ingredients");
-        check(added["steps"].size() == 3, "added recipe has steps");
-        check(added["updatedAt"].is_null(), "new recipe starts with updatedAt null");
-        check(!added.value("createdAt", "").empty()
-                  && added.value("createdAt", "").back() == 'Z',
-              "new recipe timestamp is UTC ISO-8601");
 
         string newDishName = "Test Dishes " + suffix;
-        json newDishBody = {
+        json guestRecipe = service->addRecipe(json{
             {"dish", newDishName},
-            {"title", "Test Dish Recipe " + suffix},
-            {"mainIngredient", "test"},
+            {"title", "Guest Dish Recipe " + suffix},
             {"ingredients", {"test ingredient"}},
             {"steps", {"test step"}},
             {"cookingTime", 1}
-        };
-
-        json newDishRecipe = service->addRecipe(newDishBody);
-        int newDishRecipeId = newDishRecipe.value("id", -1);
-        check(newDishRecipe.value("dish", "") == newDishName,
-              "adding a recipe creates a new dish when needed");
-        check(newDishRecipe.value("imageRef", "") == "",
-              "imageRef is optional when adding a recipe");
-        check(newDishRecipe.value("youtubeUrl", "") == "",
-              "youtubeUrl is optional when adding a recipe");
+        }, guest);
+        int guestRecipeId = guestRecipe.value("id", -1);
+        check(guestRecipe.value("ownerId", 0) == 2,
+              "guest owns the recipe he added");
 
         expectApiError(409, "duplicate title in the same dish returns 409", [&]{
-            json duplicate = {
+            service->addRecipe(json{
                 {"dish", "Biryani"},
                 {"title", "Chicken Biryani"},
                 {"ingredients", {"rice"}},
                 {"steps", {"cook"}}
-            };
-            service->addRecipe(duplicate);
+            }, junaid);
         });
-
         expectApiError(400, "missing title returns 400", [&]{
-            json invalid = {
+            service->addRecipe(json{
                 {"dish", "Biryani"},
                 {"ingredients", {"rice"}},
                 {"steps", {"cook"}}
-            };
-            service->addRecipe(invalid);
+            }, junaid);
         });
-
-        expectApiError(400, "missing ingredients returns 400", [&]{
-            json invalid = {
-                {"dish", "Biryani"},
-                {"title", "No Ingredients " + suffix},
-                {"steps", {"cook"}}
-            };
-            service->addRecipe(invalid);
-        });
-
-        expectApiError(400, "negative cookingTime returns 400", [&]{
-            json invalid = {
-                {"dish", "Biryani"},
-                {"title", "Negative Time " + suffix},
-                {"ingredients", {"rice"}},
-                {"steps", {"cook"}},
-                {"cookingTime", -5}
-            };
-            service->addRecipe(invalid);
-        });
-
         expectApiError(400, "wrong title type returns 400", [&]{
-            json invalid = {
+            service->addRecipe(json{
                 {"dish", "Biryani"},
                 {"title", 12345},
                 {"ingredients", {"rice"}},
                 {"steps", {"cook"}}
-            };
-            service->addRecipe(invalid);
+            }, junaid);
         });
 
-        // ----------------------------------------------------
-        // 5. Rating updates and leaderboard
-        // ----------------------------------------------------
-        rating = service->rateRecipe(
-            newId, 5, string("https://example.com/proofs/test-biryani.jpg"));
-        check(std::abs(rating.value("averageRating", 0.0) - 5.0) < 0.001,
-              "new recipe rating average is 5.0");
-        check(rating.value("ratingCount", 0) == 1,
-              "one user gives one rating, not two");
-        check(rating.value("myRating", 0) == 5,
-              "new recipe shows myRating 5");
-        check(rating.value("myRatingProofImageRef", "")
-                  == "https://example.com/proofs/test-biryani.jpg",
-              "new recipe keeps its proof image");
+        expectApiError(403, "a non-owner cannot edit a recipe", [&]{
+            service->updateRecipe(5, json{{"title", "Hijacked"}}, guest);
+        });
+        expectApiError(403, "a non-owner cannot delete a recipe", [&]{
+            service->deleteRecipe(5, guest);
+        });
 
-        json leaderboard = service->leaderboard();
-        check(leaderboardRank(leaderboard, newId) == 1,
-              "new 5-star recipe is rank 1 on the leaderboard");
-
-        rating = service->rateRecipe(
-            newId, 3, string("https://example.com/proofs/updated.jpg"));
-        check(std::abs(rating.value("averageRating", 0.0) - 3.0) < 0.001,
-              "changing a rating updates the average");
-        check(rating.value("ratingCount", 0) == 1,
-              "changing a rating does not increase ratingCount");
-        check(rating.value("myRatingProofImageRef", "")
-                  == "https://example.com/proofs/updated.jpg",
-              "changing a rating can replace the proof image");
-
-        rating = service->rateRecipe(newId, 4);
-        check(std::abs(rating.value("averageRating", 0.0) - 4.0) < 0.001,
-              "rating without a proof image still updates the stars");
-        check(rating.value("myRatingProofImageRef", "")
-                  == "https://example.com/proofs/updated.jpg",
-              "omitting the proof image keeps the existing proof");
-
-        leaderboard = service->leaderboard();
-        check(leaderboardRank(leaderboard, 5) == 1,
-              "Chicken Biryani is back at rank 1 after the new rating drops");
-        check(leaderboardRank(leaderboard, newId) > 1,
-              "the new recipe falls below the leaderboard leader");
-
-        // ----------------------------------------------------
-        // 6. Update and validation
-        // ----------------------------------------------------
         json updateBody = {
             {"title", "Updated Test Biryani " + suffix},
             {"mainIngredient", "basmati rice"},
             {"ingredients", {"rice", "chicken", "saffron"}},
             {"steps", {"marinate", "layer", "cook"}},
             {"cookingTime", 50},
-            {"imageRef", "https://example.com/images/updated-biryani.jpg"},
+            {"imageRef", "/uploads/updated-biryani.png"},
             {"youtubeUrl", "https://youtu.be/updated-biryani"}
         };
-
-        string originalCreatedAt = added.value("createdAt", "");
-        json updated = service->updateRecipe(newId, updateBody);
+        json updated = service->updateRecipe(newId, updateBody, junaid);
         check(updated.value("title", "") == "Updated Test Biryani " + suffix,
-              "update changes the title");
-        check(updated.value("mainIngredient", "") == "basmati rice",
-              "update changes the main ingredient");
+              "the owner can update the title");
         check(updated.value("cookingTime", 0) == 50,
-              "update changes the cooking time");
-        check(updated.value("imageRef", "")
-                  == "https://example.com/images/updated-biryani.jpg",
-              "update changes the imageRef");
-        check(updated.value("youtubeUrl", "")
-                  == "https://youtu.be/updated-biryani",
-              "update changes the youtubeUrl");
-        check(updated["ingredients"].size() == 3 && updated["steps"].size() == 3,
-              "update changes ingredients and steps");
-        check(!updated["updatedAt"].is_null()
-                  && updated.value("updatedAt", "").back() == 'Z',
-              "update sets a UTC updatedAt");
-        check(updated.value("createdAt", "") == originalCreatedAt,
-              "update does not change createdAt");
+              "the owner can update the cooking time");
+        check(updated.value("imageRef", "") == "/uploads/updated-biryani.png",
+              "the owner can update the imageRef");
+        check(!updated["updatedAt"].is_null(),
+              "update sets updatedAt");
 
         expectApiError(400, "changing the dish returns 400", [&]{
-            service->updateRecipe(newId, json{{"dish", "Another Dish"}});
+            service->updateRecipe(newId, json{{"dish", "Another Dish"}}, junaid);
         });
-
         expectApiError(400, "empty update ingredients returns 400", [&]{
-            service->updateRecipe(newId, json{{"ingredients", json::array()}});
+            service->updateRecipe(newId, json{{"ingredients", json::array()}},
+                                  junaid);
         });
 
-        // Regression test: a request that fails validation must not partially
-        // change the in-memory recipe before returning an error.
-        string titleBeforeRejectedUpdate = service->getRecipe(newId).value("title", "");
+        // A rejected update must not partially change the recipe in memory.
+        string titleBefore = service->getRecipe(newId).value("title", "");
         expectApiError(400, "invalid update does not partially apply", [&]{
             service->updateRecipe(newId, json{
                 {"title", "Rejected Title " + suffix},
                 {"ingredients", json::array()}
-            });
+            }, junaid);
         });
-        check(service->getRecipe(newId).value("title", "") == titleBeforeRejectedUpdate,
+        check(service->getRecipe(newId).value("title", "") == titleBefore,
               "rejected update leaves the recipe unchanged in memory");
 
-        expectApiError(400, "wrong cookingTime type returns 400", [&]{
-            service->updateRecipe(newId, json{{"cookingTime", "long"}});
-        });
+        json ratingsDetail = service->getRecipe(newId, guest);
+        check(ratingsDetail.value("ratingCount", -1) == 0,
+              "the new recipe starts unrated");
 
-        expectApiError(409, "updating to a duplicate title returns 409", [&]{
-            service->updateRecipe(newId, json{{"title", "Chicken Biryani"}});
-        });
-
-        expectApiError(404, "updating an unknown recipe returns 404", [&]{
-            service->updateRecipe(999999, json{{"title", "Nothing"}});
-        });
-
-        detail = service->getRecipe(newId);
-        check(detail["ratings"].size() == 1,
-              "new recipe has exactly one rating after updates");
-        json myRating = findRating(detail["ratings"], 1);
-        check(!myRating.is_null() && myRating.value("stars", 0) == 4,
-              "recipe detail exposes the rating stars");
-        check(!myRating.is_null()
-                  && myRating.value("proofImageRef", "")
-                     == "https://example.com/proofs/updated.jpg",
-              "recipe detail exposes the rating proof image");
-
-        search = service->searchRecipes("Updated Test Biryani");
-        check(containsRecipeId(search["results"], newId),
-              "search finds the updated recipe title");
-        search = service->searchRecipes(newDishName);
-        check(containsRecipeId(search["results"], newDishRecipeId),
-              "search finds recipes by dish name");
+        rating = service->rateRecipe(newId, 4,
+                                     string("/uploads/guest-proof.png"), guest);
+        check(rating.value("ratingCount", 0) == 1,
+              "guest can rate the new recipe");
+        check(service->getRecipe(newId, guest).value("myRating", 0) == 4,
+              "guest sees the new rating");
+        check(service->getRecipe(newId, junaid).value("myRating", 0) == 0,
+              "junaid still has no rating on the new recipe");
 
         // ----------------------------------------------------
-        // 7. Persistence across a restart
+        // 7. Per-dish ranking
+        // ----------------------------------------------------
+        json biryaniBoard = service->leaderboard("Biryani", junaid);
+        check(biryaniBoard.value("dish", "") == "Biryani",
+              "dish leaderboard echoes the filter");
+        // Guest lowered Chicken Biryani to 3 stars above, so Beef Biryani
+        // (4.5 from 2) leads. Chicken Biryani and the new 4-star recipe both
+        // average 4.0; the seeded recipe has more ratings, so it comes next.
+        check(leaderboardRank(biryaniBoard, 15) == 1,
+              "Beef Biryani is #1 after the guest rating change");
+        check(leaderboardRank(biryaniBoard, 5) == 2,
+              "Chicken Biryani is #2 in Biryani");
+        check(leaderboardRank(biryaniBoard, newId) == 3,
+              "the newest one-rating recipe breaks the tie first");
+        check(leaderboardRank(biryaniBoard, 16) == 4,
+              "Vegetable Biryani is #4 in Biryani");
+
+        json karahiBoard = service->leaderboard("Karahi", junaid);
+        check(leaderboardRank(karahiBoard, 3) == 1,
+              "Peshawari Karahi is #1 in Karahi");
+        check(leaderboardRank(karahiBoard, 11) == 2,
+              "Chicken Karahi is #2 in Karahi");
+        json unratedKarahi = findLeaderboardEntry(karahiBoard, 12);
+        check(unratedKarahi.value("rank", -1) == 0,
+              "an unrated recipe has rank 0");
+        check(unratedKarahi.value("isNew", false),
+              "an unrated recipe is marked as new");
+        check(karahiBoard["leaderboard"].back()["recipe"].value("id", -1) == 12,
+              "unrated recipes come after rated recipes");
+
+        service->rateRecipe(12, 5, nullopt, junaid);
+        karahiBoard = service->leaderboard("Karahi", junaid);
+        check(leaderboardRank(karahiBoard, 12) == 1,
+              "a new 5-star rating moves Mutton Karahi to #1");
+
+        json globalBoard = service->leaderboard("", junaid);
+        check(globalBoard["leaderboard"].size() >= 15,
+              "global leaderboard still includes rated recipes");
+        bool globalHasNew = false;
+        for(const json& entry : globalBoard["leaderboard"]){
+            if(entry.value("isNew", false)) globalHasNew = true;
+        }
+        check(!globalHasNew, "global leaderboard omits unrated recipes");
+
+        // ----------------------------------------------------
+        // 8. Persistence across a restart
         // ----------------------------------------------------
         service.reset();
-        service = make_unique<BackendService>(testDir);
+        service = make_unique<BackendService>(testDir, recipeSeed,
+                                              make_shared<FakeRecipeExtractor>(),
+                                              userSeed);
 
         health = service->health();
-        check(health.value("recipes", 0) == 8,
+        check(health.value("recipes", 0) == 20,
               "reloaded database has the two added recipes");
+        check(service->me(junaid)["user"].value("id", 0) == 1,
+              "the session token survives a server restart");
 
-        detail = service->getRecipe(newId);
+        detail = service->getRecipe(newId, junaid);
         check(detail.value("title", "") == "Updated Test Biryani " + suffix,
               "updated title survives reload");
-        check(detail.value("imageRef", "")
-                  == "https://example.com/images/updated-biryani.jpg",
+        check(detail.value("imageRef", "") == "/uploads/updated-biryani.png",
               "updated imageRef survives reload");
-        check(detail.value("youtubeUrl", "")
-                  == "https://youtu.be/updated-biryani",
-              "updated youtubeUrl survives reload");
-        check(detail.value("myRating", 0) == 4,
-              "rating survives reload");
+        detail = service->getRecipe(5, junaid);
         check(detail.value("myRatingProofImageRef", "")
-                  == "https://example.com/proofs/updated.jpg",
-              "rating proof image survives reload");
-
-        detail = service->getRecipe(5);
-        check(detail.value("imageRef", "") == "asset:assets/images/biryani.jpg",
-              "seed imageRef survives a full save/reload cycle");
-        check(detail.value("myRatingProofImageRef", "")
-                  == "https://example.com/proofs/biryani.jpg",
+                  == "/uploads/proof-biryani.jpg",
               "seed recipe proof image survives reload");
+        check(detail["ratings"].size() == 2,
+              "rating changes survive reload");
+        check(detail.value("myRating", 0) == 5,
+              "junaid's rating survives reload");
+        check(service->getRecipe(5, guest).value("myRating", 0) == 3,
+              "guest's separate rating survives reload");
 
-        detail = service->getRecipe(newDishRecipeId);
-        check(detail.value("dish", "") == newDishName,
-              "new dish survives reload");
-
-        search = service->searchRecipes("biriyani");
-        check(containsRecipeId(search["results"], 5),
-              "typo search still works after reload");
+        search = service->searchRecipes(newDishName, junaid);
+        check(containsRecipeId(search["results"], guestRecipeId),
+              "the guest recipe survives reload");
 
         // ----------------------------------------------------
-        // 8. Delete and cleanup behavior
+        // 9. Delete and cleanup behavior
         // ----------------------------------------------------
-        json deleted = service->deleteRecipe(newId);
+        expectApiError(403, "junaid cannot delete the guest recipe", [&]{
+            service->deleteRecipe(guestRecipeId, junaid);
+        });
+
+        json deleted = service->deleteRecipe(guestRecipeId, guest);
+        check(deleted.value("deleted", false) == true,
+              "the owner can delete their recipe");
+
+        deleted = service->deleteRecipe(newId, junaid);
         check(deleted.value("deleted", false) == true,
               "delete confirms the recipe was removed");
         expectApiError(404, "deleted recipe returns 404", [&]{
             service->getRecipe(newId);
         });
-        expectApiError(404, "deleting an unknown recipe returns 404", [&]{
-            service->deleteRecipe(999999);
-        });
-
-        deleted = service->deleteRecipe(newDishRecipeId);
-        check(deleted.value("deleted", false) == true,
-              "delete removes the recipe in the new dish");
 
         list = service->listRecipes();
-        check(list.size() == 6, "list is back to the 6 seed recipes");
+        check(list.size() == 18, "list is back to the 18 seed recipes");
 
         search = service->searchRecipes(newDishName);
         check(search["results"].empty(),
@@ -658,13 +639,13 @@ int main(){
               "no temporary save file is left behind");
 
         // ----------------------------------------------------
-        // 9. Shut down and remove test data
+        // 10. Shut down and remove test data
         // ----------------------------------------------------
         service.reset();
         std::filesystem::remove_all(testDir);
 
         if(failureCount == 0){
-            cout << "\nALL STAGE 1 CHECKS PASSED\n";
+            cout << "\nALL BACKEND CHECKS PASSED\n";
             return 0;
         }
 

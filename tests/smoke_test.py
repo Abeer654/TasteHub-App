@@ -10,7 +10,8 @@ To run read-only checks against a server that is already running:
 
     python3 tests/smoke_test.py --base-url http://127.0.0.1:8080
 
-The read-only mode does not create, update or delete recipes.
+The read-only mode logs in with the demo accounts but does not create, update,
+delete or rate anything.
 """
 
 import argparse
@@ -24,18 +25,27 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+import uuid
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SERVER_BINARY = REPO_ROOT / "build" / "tastehub-server"
 SEED_FILE = REPO_ROOT / "seed" / "recipes.json"
+USERS_SEED_FILE = REPO_ROOT / "seed" / "users.json"
+
+# A real 1x1 transparent PNG. The server checks magic bytes, not names.
+TINY_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
+    "890000000d4944415478da63f8cf00000301010018dd8db00000000049454e44"
+    "ae426082"
+)
 
 
 # ------------------------------------------------------------
 #  Small HTTP and assertion helpers
 # ------------------------------------------------------------
 
-def request(base_url, method, path, body=None, raw_body=None):
+def request(base_url, method, path, body=None, raw_body=None, token=None):
     """Return (status, parsed_json_or_none, content_type)."""
     data = None
     if raw_body is not None:
@@ -46,6 +56,8 @@ def request(base_url, method, path, body=None, raw_body=None):
     http_request = urllib.request.Request(base_url + path, data=data,
                                           method=method)
     http_request.add_header("Accept", "application/json")
+    if token:
+        http_request.add_header("Authorization", "Bearer " + token)
     if data is not None:
         http_request.add_header("Content-Type", "application/json")
 
@@ -62,9 +74,11 @@ def request(base_url, method, path, body=None, raw_body=None):
                 error.headers.get_content_type())
 
 
-def request_text(base_url, path):
+def request_text(base_url, path, token=None):
     """Return (status, body_text, content_type) for non-JSON routes."""
     http_request = urllib.request.Request(base_url + path, method="GET")
+    if token:
+        http_request.add_header("Authorization", "Bearer " + token)
 
     try:
         with urllib.request.urlopen(http_request, timeout=10) as response:
@@ -74,6 +88,51 @@ def request_text(base_url, path):
     except urllib.error.HTTPError as error:
         return (error.code,
                 error.read().decode(),
+                error.headers.get_content_type())
+
+
+def request_bytes(base_url, path):
+    """Return (status, body_bytes, content_type) for binary files."""
+    http_request = urllib.request.Request(base_url + path, method="GET")
+
+    try:
+        with urllib.request.urlopen(http_request, timeout=10) as response:
+            return (response.status,
+                    response.read(),
+                    response.headers.get_content_type())
+    except urllib.error.HTTPError as error:
+        return (error.code, error.read(), error.headers.get_content_type())
+
+
+def upload_image(base_url, token, content, filename="photo.png",
+                 content_type="image/png"):
+    """POST a multipart form to /api/images and return (status, body, type)."""
+    boundary = "----TasteHub" + uuid.uuid4().hex
+    body = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+        f"Content-Type: {content_type}\r\n"
+        "\r\n"
+    ).encode() + content + f"\r\n--{boundary}--\r\n".encode()
+
+    http_request = urllib.request.Request(
+        base_url + "/api/images", data=body, method="POST")
+    http_request.add_header("Accept", "application/json")
+    http_request.add_header("Content-Type",
+                            "multipart/form-data; boundary=" + boundary)
+    if token:
+        http_request.add_header("Authorization", "Bearer " + token)
+
+    try:
+        with urllib.request.urlopen(http_request, timeout=10) as response:
+            text = response.read().decode()
+            return (response.status,
+                    json.loads(text) if text else None,
+                    response.headers.get_content_type())
+    except urllib.error.HTTPError as error:
+        text = error.read().decode()
+        return (error.code,
+                json.loads(text) if text else None,
                 error.headers.get_content_type())
 
 
@@ -107,6 +166,16 @@ def find_leaderboard_entry(leaderboard, recipe_id):
     return None
 
 
+def login(base_url, username, password):
+    status, body, _ = request(
+        base_url, "POST", "/api/auth/login",
+        body={"username": username, "password": password})
+    check_status(status, 200, f"{username} can log in")
+    token = body.get("token", "")
+    check(len(token) > 20, f"{username} receives a session token")
+    return token
+
+
 def free_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
@@ -132,7 +201,8 @@ def start_server(work_dir, log_path):
         [str(SERVER_BINARY),
          "--host", "127.0.0.1",
          "--port", str(port),
-         "--data-dir", "../data"],
+         "--data-dir", "../data",
+         "--uploads-dir", "../data/uploads"],
         cwd=str(work_dir / "run"),
         env=environment,
         stdout=log_file,
@@ -189,7 +259,8 @@ def check_duplicate_port_rejected(base_url, work_dir, log_path):
         [str(SERVER_BINARY),
          "--host", "127.0.0.1",
          "--port", str(port),
-         "--data-dir", "../data"],
+         "--data-dir", "../data",
+         "--uploads-dir", "../data/uploads"],
         cwd=str(work_dir / "run"),
         env=environment,
         stdout=log_file,
@@ -228,12 +299,48 @@ def run_read_only_checks(base_url):
     check(content_type == "application/json",
           "health response is application/json")
     check(health.get("status") == "ok", "health status is ok")
-    check(health.get("recipes", 0) >= 6, "health reports at least 6 recipes")
+    check(health.get("recipes", 0) >= 18,
+          "health reports the seeded recipes")
+    check(health.get("users", 0) >= 2,
+          "health reports the demo accounts")
 
+    # ---- authentication ----
+    junaid = login(base_url, "junaid", "tastehub")
+    guest = login(base_url, "guest", "guest")
+
+    status, me, _ = request(base_url, "GET", "/api/auth/me", token=junaid)
+    check_status(status, 200, "me returns 200 with a token")
+    check(me.get("user", {}).get("id") == 1, "junaid is user 1")
+    check(me.get("user", {}).get("username") == "junaid",
+          "me includes the username")
+    check("passwordHash" not in json.dumps(me),
+          "me never exposes password hashes")
+
+    status, body, _ = request(base_url, "GET", "/api/auth/me")
+    check_error(status, body, 401, "me without a token is rejected")
+
+    status, body, _ = request(
+        base_url, "POST", "/api/auth/login",
+        body={"username": "junaid", "password": "wrong"})
+    check_error(status, body, 401, "wrong password is rejected")
+
+    # Logging in again replaces the previous session, so re-login after the
+    # deliberate wrong-password attempt only changed nothing. Keep the tokens.
+
+    # ---- public recipe reads ----
     status, recipes, _ = request(base_url, "GET", "/api/recipes")
     check_status(status, 200, "recipe list returns 200")
-    check(isinstance(recipes, list) and len(recipes) >= 6,
-          "recipe list has at least 6 entries")
+    check(isinstance(recipes, list) and len(recipes) >= 18,
+          "recipe list has the seeded recipes")
+    check(all("ownerName" in item for item in recipes),
+          "recipe summaries include ownerName")
+    check(all(item.get("myRating") == 0 for item in recipes),
+          "anonymous list has myRating 0")
+
+    status, mine, _ = request(base_url, "GET", "/api/recipes", token=junaid)
+    summary = find_recipe(mine, 5)
+    check(summary is not None and summary.get("myRating") == 5,
+          "a logged-in user sees their own rating")
 
     status, detail, _ = request(base_url, "GET", "/api/recipes/5")
     check_status(status, 200, "recipe detail returns 200")
@@ -243,6 +350,8 @@ def run_read_only_checks(base_url):
           "detail has ingredients")
     check(isinstance(detail.get("steps"), list), "detail has steps")
     check(isinstance(detail.get("ratings"), list), "detail has ratings")
+    check(all("userName" in rating for rating in detail.get("ratings", [])),
+          "detail ratings include usernames")
 
     status, search, _ = request(base_url, "GET", "/api/search?q=briyani")
     check_status(status, 200, "typo search returns 200")
@@ -259,11 +368,35 @@ def run_read_only_checks(base_url):
     check(search.get("results") == [],
           "blank search returns an empty result list")
 
-    status, leaderboard, _ = request(base_url, "GET", "/api/leaderboard")
-    check_status(status, 200, "leaderboard returns 200")
-    check(find_leaderboard_entry(leaderboard.get("leaderboard", []), 5) is not None,
-          "seed leaderboard contains Chicken Biryani")
+    # ---- per-dish ranking ----
+    status, biryani, _ = request(
+        base_url, "GET", "/api/leaderboard?dish=Biryani")
+    check_status(status, 200, "dish leaderboard returns 200")
+    check(biryani.get("dish") == "Biryani", "dish leaderboard echoes the filter")
+    entries = biryani.get("leaderboard", [])
+    chicken = find_leaderboard_entry(entries, 5)
+    check(chicken is not None, "Biryani leaderboard contains Chicken Biryani")
+    check(chicken.get("rank") == 1, "Chicken Biryani is #1 in Biryani")
+    check([entry.get("rank") for entry in entries] == [1, 2, 3],
+          "Biryani ranks are 1, 2 and 3")
 
+    status, karahi, _ = request(
+        base_url, "GET", "/api/leaderboard?dish=Karahi")
+    check_status(status, 200, "Karahi leaderboard returns 200")
+    entries = karahi.get("leaderboard", [])
+    mutton = find_leaderboard_entry(entries, 12)
+    check(mutton is not None and mutton.get("rank") == 0,
+          "the unrated Mutton Karahi has rank 0")
+    check(mutton.get("isNew") is True, "the unrated recipe is marked as new")
+    check(entries[-1].get("recipe", {}).get("id") == 12,
+          "unrated recipes come after rated recipes")
+
+    status, leaderboard, _ = request(base_url, "GET", "/api/leaderboard")
+    check_status(status, 200, "global leaderboard returns 200")
+    check(find_leaderboard_entry(leaderboard.get("leaderboard", []), 5)
+          is not None, "global leaderboard contains Chicken Biryani")
+
+    # ---- error handling ----
     status, body, _ = request(base_url, "GET", "/api/recipes/999999")
     check_error(status, body, 404, "missing recipe")
 
@@ -273,12 +406,14 @@ def run_read_only_checks(base_url):
     status, body, _ = request(base_url, "GET", "/api/does-not-exist")
     check_error(status, body, 404, "unknown route")
 
+    return junaid, guest
+
 
 # ------------------------------------------------------------
 #  Mutating checks for the self-contained test
 # ------------------------------------------------------------
 
-def run_mutation_checks(base_url):
+def run_mutation_checks(base_url, junaid, guest):
     _, health, _ = request(base_url, "GET", "/api/health")
     recipe_count_before = health["recipes"]
 
@@ -293,103 +428,195 @@ def run_mutation_checks(base_url):
         "youtubeUrl": "",
     }
 
-    status, created, content_type = request(
+    # ---- login is required for writes ----
+    status, body, _ = request(
         base_url, "POST", "/api/recipes", body=new_recipe)
+    check_error(status, body, 401, "creating a recipe without login is rejected")
+
+    status, body, _ = request(
+        base_url, "PUT", "/api/recipes/5/rating", body={"stars": 5})
+    check_error(status, body, 401, "rating without login is rejected")
+
+    status, body, _ = request(
+        base_url, "DELETE", "/api/recipes/5", token="")
+    check_error(status, body, 401, "deleting without login is rejected")
+
+    # ---- image uploads ----
+    status, uploaded, content_type = upload_image(base_url, junaid, TINY_PNG)
+    check_status(status, 201, "PNG upload returns 201")
+    check(content_type == "application/json",
+          "upload response is application/json")
+    image_ref = uploaded.get("imageRef", "")
+    check(image_ref.startswith("/uploads/"),
+          "upload returns an /uploads/ image path")
+
+    status, image_bytes, image_type = request_bytes(base_url, image_ref)
+    check_status(status, 200, "uploaded image can be downloaded")
+    check(image_bytes == TINY_PNG, "uploaded image bytes are intact")
+    check(image_type == "image/png", "uploaded image is served as image/png")
+
+    status, body, _ = upload_image(
+        base_url, junaid, b"hello", filename="notes.txt",
+        content_type="text/plain")
+    check_error(status, body, 400, "non-image upload is rejected")
+
+    status, body, _ = upload_image(base_url, None, TINY_PNG)
+    check_error(status, body, 401, "upload without login is rejected")
+
+    # ---- create and ownership ----
+    status, created, content_type = request(
+        base_url, "POST", "/api/recipes", body={**new_recipe,
+                                                "imageRef": image_ref},
+        token=junaid)
     check_status(status, 201, "create returns 201")
     check(content_type == "application/json",
           "create response is application/json")
     check(created.get("title") == "Smoke Test Curry",
           "created recipe has the right title")
+    check(created.get("ownerId") == 1, "created recipe belongs to junaid")
+    check(created.get("imageRef") == image_ref,
+          "created recipe keeps the uploaded image")
     recipe_id = created["id"]
 
     status, body, _ = request(
-        base_url, "POST", "/api/recipes", body=new_recipe)
+        base_url, "POST", "/api/recipes", body=new_recipe, token=junaid)
     check_error(status, body, 409, "duplicate title")
 
     status, body, _ = request(
-        base_url, "POST", "/api/recipes", raw_body="{not valid json")
+        base_url, "POST", "/api/recipes", raw_body="{not valid json",
+        token=junaid)
     check_error(status, body, 400, "malformed create body")
 
     status, body, _ = request(
         base_url, "POST", "/api/recipes",
-        body={"dish": "Smoke Test", "ingredients": ["x"], "steps": ["y"]})
+        body={"dish": "Smoke Test", "ingredients": ["x"], "steps": ["y"]},
+        token=junaid)
     check_error(status, body, 400, "missing create title")
 
-    proof_url = "https://example.com/proofs/smoke-curry.jpg"
+    status, body, _ = request(
+        base_url, "PUT", f"/api/recipes/{recipe_id}",
+        body={"title": "Guest Hijack"}, token=guest)
+    check_error(status, body, 403, "a non-owner cannot edit the recipe")
+
+    status, body, _ = request(
+        base_url, "DELETE", f"/api/recipes/{recipe_id}", token=guest)
+    check_error(status, body, 403, "a non-owner cannot delete the recipe")
+
+    status, body, _ = request(
+        base_url, "PUT", f"/api/recipes/{recipe_id}",
+        body={"title": "Anonymous Hijack"})
+    check_error(status, body, 401, "an anonymous edit is rejected")
+
+    # ---- per-user ratings ----
     status, rating, _ = request(
         base_url, "PUT", f"/api/recipes/{recipe_id}/rating",
-        body={"stars": 5, "proofImageRef": proof_url})
-    check_status(status, 200, "rating with proof returns 200")
-    check(rating.get("myRating") == 5, "rating value is saved")
-    check(rating.get("myRatingProofImageRef") == proof_url,
-          "proof image is saved")
+        body={"stars": 4, "proofImageRef": "https://example.com/guest.jpg"},
+        token=guest)
+    check_status(status, 200, "guest can rate the new recipe")
+    check(rating.get("myRating") == 4, "guest's rating value is saved")
+
+    status, detail, _ = request(
+        base_url, "GET", f"/api/recipes/{recipe_id}", token=guest)
+    check(detail.get("myRating") == 4, "guest sees their own rating")
+    check(detail.get("myRatingProofImageRef") ==
+          "https://example.com/guest.jpg",
+          "guest proof image is saved")
+
+    status, detail, _ = request(
+        base_url, "GET", f"/api/recipes/{recipe_id}", token=junaid)
+    check(detail.get("myRating") == 0,
+          "junaid's rating stays separate from guest's")
+    check(any(item.get("userName") == "guest"
+              and item.get("stars") == 4
+              for item in detail.get("ratings", [])),
+          "detail ratings include the guest's name and stars")
+
+    # Rating an existing seed recipe as junaid replaces only his own rating.
+    status, rating, _ = request(
+        base_url, "PUT", "/api/recipes/5/rating",
+        body={"stars": 5, "proofImageRef": image_ref}, token=junaid)
+    check_status(status, 200, "junaid can rate a seed recipe")
+    check(rating.get("myRatingProofImageRef") == image_ref,
+          "an uploaded image can be used as the rating proof")
 
     # Omitting the proof keeps it; sending an empty string clears it.
     status, rating, _ = request(
         base_url, "PUT", f"/api/recipes/{recipe_id}/rating",
-        body={"stars": 4})
+        body={"stars": 3}, token=guest)
     check_status(status, 200, "rating without proof returns 200")
-    check(rating.get("myRatingProofImageRef") == proof_url,
+    check(rating.get("myRatingProofImageRef") ==
+          "https://example.com/guest.jpg",
           "omitted proof keeps the existing image")
 
     status, rating, _ = request(
         base_url, "PUT", f"/api/recipes/{recipe_id}/rating",
-        body={"stars": 3, "proofImageRef": ""})
+        body={"stars": 4, "proofImageRef": ""}, token=guest)
     check_status(status, 200, "rating with empty proof returns 200")
     check(rating.get("myRatingProofImageRef") == "",
           "empty proof clears the image")
 
-    # Put the good proof back for the detail/list/search/leaderboard checks.
+    # Put a good proof back for the detail/list/leaderboard checks.
     status, rating, _ = request(
         base_url, "PUT", f"/api/recipes/{recipe_id}/rating",
-        body={"stars": 5, "proofImageRef": proof_url})
+        body={"stars": 5,
+              "proofImageRef": "https://example.com/proofs/smoke-curry.jpg"},
+        token=guest)
     check_status(status, 200, "rating can restore the proof image")
 
     status, body, _ = request(
         base_url, "PUT", f"/api/recipes/{recipe_id}/rating",
-        body={"stars": 0})
+        body={"stars": 0}, token=guest)
     check_error(status, body, 400, "rating below 1 is rejected")
 
     status, body, _ = request(
         base_url, "PUT", f"/api/recipes/{recipe_id}/rating",
-        body={"stars": "five"})
+        body={"stars": "five"}, token=guest)
     check_error(status, body, 400, "non-integer rating is rejected")
 
     status, body, _ = request(
         base_url, "PUT", f"/api/recipes/{recipe_id}/rating",
-        body={"stars": 5, "proofImageRef": 123})
+        body={"stars": 5, "proofImageRef": 123}, token=guest)
     check_error(status, body, 400, "non-string proof is rejected")
 
+    # ---- reads after the writes ----
     status, detail, _ = request(
-        base_url, "GET", f"/api/recipes/{recipe_id}")
+        base_url, "GET", f"/api/recipes/{recipe_id}", token=guest)
     check_status(status, 200, "created recipe detail returns 200")
-    check(detail.get("myRatingProofImageRef") == proof_url,
-          "detail includes the demo user's proof")
-    check(any(item.get("proofImageRef") == proof_url
+    check(detail.get("myRatingProofImageRef") ==
+          "https://example.com/proofs/smoke-curry.jpg",
+          "detail includes the viewer's proof")
+    check(any(item.get("proofImageRef") ==
+              "https://example.com/proofs/smoke-curry.jpg"
               for item in detail.get("ratings", [])),
           "detail ratings include the proof image")
 
-    status, recipes, _ = request(base_url, "GET", "/api/recipes")
+    status, recipes, _ = request(
+        base_url, "GET", "/api/recipes", token=guest)
     summary = find_recipe(recipes, recipe_id)
     check(summary is not None, "created recipe appears in the list")
-    check(summary.get("myRatingProofImageRef") == proof_url,
-          "list summary includes the proof image")
+    check(summary.get("myRatingProofImageRef") ==
+          "https://example.com/proofs/smoke-curry.jpg",
+          "list summary includes the viewer's proof")
 
     status, search, _ = request(base_url, "GET", "/api/search?q=smoke")
     check_status(status, 200, "searching the new recipe returns 200")
     check(find_recipe(search.get("results", []), recipe_id) is not None,
           "search finds the new recipe")
 
-    status, leaderboard, _ = request(base_url, "GET", "/api/leaderboard")
-    entry = find_leaderboard_entry(leaderboard.get("leaderboard", []), recipe_id)
-    check(entry is not None, "new recipe appears on the leaderboard")
+    status, board, _ = request(
+        base_url, "GET", "/api/leaderboard?dish=Smoke%20Test")
+    check_status(status, 200, "new dish leaderboard returns 200")
+    entry = find_leaderboard_entry(board.get("leaderboard", []), recipe_id)
+    check(entry is not None, "new recipe appears in its dish ranking")
+    check(entry.get("rank") == 1, "the only recipe in the dish is #1")
     check(entry.get("averageRating") == 5.0,
           "new recipe has the expected average rating")
 
+    # ---- owner edit ----
     status, updated, _ = request(
         base_url, "PUT", f"/api/recipes/{recipe_id}",
-        body={"title": "Smoke Test Curry Updated"})
-    check_status(status, 200, "update returns 200")
+        body={"title": "Smoke Test Curry Updated"}, token=junaid)
+    check_status(status, 200, "the owner can update the recipe")
     check(updated.get("title") == "Smoke Test Curry Updated",
           "title was updated")
     check(updated.get("updatedAt") is not None,
@@ -397,41 +624,55 @@ def run_mutation_checks(base_url):
 
     status, body, _ = request(
         base_url, "PUT", f"/api/recipes/{recipe_id}",
-        body={"dish": "Another Dish"})
+        body={"dish": "Another Dish"}, token=junaid)
     check_error(status, body, 400, "changing dish is rejected")
 
     status, body, _ = request(
         base_url, "POST", "/api/recipes/parse",
-        body={"text": "short"})
+        body={"text": "I made chicken biryani with rice, chicken and spices."})
+    check_error(status, body, 401, "AI parse requires login")
+
+    status, body, _ = request(
+        base_url, "POST", "/api/recipes/parse",
+        body={"text": "short"}, token=junaid)
     check_error(status, body, 400, "short AI description is rejected")
 
     status, body, _ = request(
         base_url, "POST", "/api/recipes/parse",
-        body={"text": "I made chicken biryani with rice, chicken and spices."})
+        body={"text": "I made chicken biryani with rice, chicken and spices."},
+        token=junaid)
     check_error(status, body, 503, "AI parse without a key is unavailable")
 
     _, health_after_parse, _ = request(base_url, "GET", "/api/health")
     check(health_after_parse["recipes"] == recipe_count_before + 1,
           "AI parse did not save a recipe")
 
-    return recipe_id, recipe_count_before
+    return recipe_id, recipe_count_before, image_ref
 
 
 def run_persistence_and_delete_checks(base_url, data_dir, recipe_id,
-                                      recipe_count_before):
+                                      recipe_count_before, image_ref,
+                                      junaid):
     status, detail, _ = request(
-        base_url, "GET", f"/api/recipes/{recipe_id}")
+        base_url, "GET", f"/api/recipes/{recipe_id}", token=junaid)
     check_status(status, 200, "created recipe survives a server restart")
     check(detail.get("title") == "Smoke Test Curry Updated",
           "updated title survives a server restart")
-    check(detail.get("myRatingProofImageRef") ==
-          "https://example.com/proofs/smoke-curry.jpg",
+    check(detail.get("imageRef") == image_ref,
+          "the uploaded recipe image survives a server restart")
+    check(any(item.get("proofImageRef") ==
+              "https://example.com/proofs/smoke-curry.jpg"
+              for item in detail.get("ratings", [])),
           "rating proof survives a server restart")
 
-    status, deleted, _ = request(
-        base_url, "DELETE", f"/api/recipes/{recipe_id}")
-    check_status(status, 200, "delete returns 200")
-    check(deleted.get("deleted") is True, "delete response is correct")
+    status, _, image_type = request_bytes(base_url, image_ref)
+    check_status(status, 200, "the uploaded image survives a server restart")
+    check(image_type == "image/png", "the image still has the right type")
+
+    status, body, _ = request(
+        base_url, "DELETE", f"/api/recipes/{recipe_id}", token=junaid)
+    check_status(status, 200, "the owner can delete the recipe")
+    check(body.get("deleted") is True, "delete response is correct")
 
     status, body, _ = request(base_url, "GET", f"/api/recipes/{recipe_id}")
     check_error(status, body, 404, "deleted recipe is gone")
@@ -482,6 +723,7 @@ def main():
     (work_dir / "run").mkdir()
     (work_dir / "seed").mkdir()
     shutil.copyfile(SEED_FILE, work_dir / "seed" / "recipes.json")
+    shutil.copyfile(USERS_SEED_FILE, work_dir / "seed" / "users.json")
     data_dir = work_dir / "data"
 
     process = None
@@ -490,10 +732,11 @@ def main():
 
     try:
         process, log_file, base_url = start_server(work_dir, last_log)
-        run_read_only_checks(base_url)
+        junaid, guest = run_read_only_checks(base_url)
         check_duplicate_port_rejected(
             base_url, work_dir, work_dir / "server-duplicate.log")
-        recipe_id, recipe_count_before = run_mutation_checks(base_url)
+        recipe_id, recipe_count_before, image_ref = run_mutation_checks(
+            base_url, junaid, guest)
 
         stop_server(process, log_file)
         process, log_file = None, None
@@ -502,7 +745,8 @@ def main():
         last_log = work_dir / "server-restart.log"
         process, log_file, base_url = start_server(work_dir, last_log)
         run_persistence_and_delete_checks(
-            base_url, data_dir, recipe_id, recipe_count_before)
+            base_url, data_dir, recipe_id, recipe_count_before, image_ref,
+            junaid)
 
         stop_server(process, log_file)
         process, log_file = None, None
