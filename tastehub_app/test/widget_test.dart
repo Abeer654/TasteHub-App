@@ -103,11 +103,17 @@ void main() {
   testWidgets('a narrow window lays dish cards out as compact rows', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(430, 1400);
+    tester.view.physicalSize = const Size(360, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
-    await _pumpApp(tester, username: 'junaid');
+    // A long dish name would truncate to a couple of characters if the
+    // Top pick pill squeezed the title row on a phone-width card.
+    final recipes = demoRecipeSummaries();
+    for (final recipe in recipes) {
+      recipe['dish'] = 'Hydrabadi Pulao';
+    }
+    await _pumpApp(tester, username: 'junaid', recipes: recipes);
 
     // Below the 600px breakpoint the grid is a single column, which would
     // stretch the 300px banner card across the whole width. Those cells
@@ -116,9 +122,21 @@ void main() {
     expect(cards, isNotEmpty);
     expect(cards.every((card) => card.horizontal), isTrue);
 
-    // The status badge moves next to the title (no photo banner to sit
-    // on) and the shorter cell does not overflow.
-    expect(find.text('Top pick'), findsWidgets);
+    // The status badge lives on the thumbnail (left of the title), so the
+    // dish name keeps the whole text column instead of being squeezed
+    // into a few characters by the pill.
+    final pillCenter = tester.getCenter(find.text('Top pick')).dx;
+    final titleLeft = tester.getTopLeft(find.text('Hydrabadi Pulao')).dx;
+    expect(
+      pillCenter,
+      lessThan(titleLeft),
+      reason: 'the Top pick badge must sit on the thumbnail, not the title',
+    );
+    expect(
+      tester.getSize(find.text('Hydrabadi Pulao')).width,
+      greaterThanOrEqualTo(150),
+      reason: 'the dish name must get the full text column',
+    );
     expect(tester.takeException(), isNull);
   });
 

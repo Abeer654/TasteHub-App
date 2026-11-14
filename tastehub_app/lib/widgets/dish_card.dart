@@ -82,17 +82,21 @@ class DishCard extends StatelessWidget {
 
   /// Single-column layout: a fixed-width thumbnail on the left and the
   /// summary on the right, so a full-width cell never leaves a tall
-  /// banner card half empty.
+  /// banner card half empty. The Top pick/New badge sits on the photo
+  /// (like the banner layout) instead of beside the title, which would
+  /// squeeze dish names down to a few characters on phone widths.
   Widget _horizontalBody(
     BuildContext context, {
     required Recipe? top,
     required bool topIsRated,
   }) {
+    final colors = context.tasteHubColors;
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(
-          width: 132,
+          width: 104,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -100,9 +104,14 @@ class DishCard extends StatelessWidget {
                 imageRef: top == null ? '' : resolveMediaUrl(top.imageRef),
                 dish: group.name,
                 title: group.name,
-                width: 132,
+                width: 104,
               ),
               Positioned(top: 10, left: 10, child: _countPill(context)),
+              Positioned(
+                bottom: 10,
+                left: 10,
+                child: _statusPill(colors: colors, topIsRated: topIsRated),
+              ),
             ],
           ),
         ),
@@ -118,7 +127,7 @@ class DishCard extends StatelessWidget {
               context,
               top: top,
               topIsRated: topIsRated,
-              showStatusPill: true,
+              showStatusPill: false,
             ),
           ),
         ),
@@ -174,8 +183,9 @@ class DishCard extends StatelessWidget {
   }
 
   /// Title, subtitle and rating row shared by both layouts. In the
-  /// horizontal layout the Top pick/New pill moves next to the title,
-  /// because there is no photo banner to sit on.
+  /// horizontal layout the Top pick/New pill lives on the thumbnail
+  /// instead (there is no photo banner, and a pill beside the title
+  /// truncates dish names on phone widths).
   Widget _content(
     BuildContext context, {
     required Recipe? top,
@@ -239,10 +249,19 @@ class DishCard extends StatelessWidget {
           children: [
             RatingStars(value: averageRating, size: 16),
             const SizedBox(width: 7),
-            RatingLabel(
-              averageRating: averageRating,
-              ratingCount: ratingCount,
-              notRatedText: 'New dish',
+            // Scales down instead of overflowing the row when the label
+            // is wider than the space left beside the stars (very narrow
+            // cards, or large text scaling).
+            Flexible(
+              child: FittedBox(
+                alignment: Alignment.centerLeft,
+                fit: BoxFit.scaleDown,
+                child: RatingLabel(
+                  averageRating: averageRating,
+                  ratingCount: ratingCount,
+                  notRatedText: 'New dish',
+                ),
+              ),
             ),
           ],
         ),
