@@ -603,19 +603,27 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (context, constraints) {
           final columns = constraints.maxWidth >= 1040
               ? 3
-              : constraints.maxWidth >= 680
+              : constraints.maxWidth >= 600
               ? 2
               : 1;
+
+          // The 2/3-up grid uses tall banner cards (300px). A forced
+          // single column would stretch that banner across the whole
+          // width, so those cards become compact horizontal rows instead
+          // and the cell shrinks to match (see dish_card.dart).
+          final extent = columns == 1 ? 148.0 : 300.0;
 
           return GridView.builder(
             physics: const AlwaysScrollableScrollPhysics(),
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            padding: const EdgeInsets.only(top: 2, bottom: 96),
+            // Bottom padding clears the FloatingActionButton so it never
+            // sits on the last card.
+            padding: const EdgeInsets.only(top: 2, bottom: 156),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: columns,
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
-              mainAxisExtent: 300,
+              mainAxisExtent: extent,
             ),
             itemCount: groups.length,
             itemBuilder: (context, index) {
@@ -623,6 +631,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 group: groups[index],
                 resolveMediaUrl: widget.api.resolveMediaUrl,
                 searchQuery: _query,
+                horizontal: columns == 1,
                 onTap: () => _openDish(groups[index]),
               );
             },

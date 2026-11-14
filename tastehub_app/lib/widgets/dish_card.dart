@@ -4,11 +4,17 @@
 //  Owns: the dish grid card. During a search it reveals the matching
 //  recipe names instead of only the top recipe, so a dish with several
 //  matches is not reduced to one title.
+//
+//  Two layouts: the 2/3-up grid uses a tall banner card; a forced
+//  single column (narrow window) switches to [horizontal], a compact
+//  left-thumbnail row like the My recipes list, so the card never
+//  stretches into an empty half-width banner.
 // ============================================================
 
 import 'package:flutter/material.dart';
 
 import '../models/dish_group.dart';
+import '../models/recipe.dart';
 import '../theme.dart';
 import 'rating_stars.dart';
 import 'recipe_thumbnail.dart';
@@ -20,6 +26,7 @@ class DishCard extends StatelessWidget {
     required this.resolveMediaUrl,
     required this.onTap,
     this.searchQuery = '',
+    this.horizontal = false,
   });
 
   final DishGroup group;
@@ -28,6 +35,10 @@ class DishCard extends StatelessWidget {
 
   /// The active search text, or an empty string on the normal dish grid.
   final String searchQuery;
+
+  /// True in the home grid's single-column mode: lay out as a compact
+  /// horizontal row instead of a tall banner card.
+  final bool horizontal;
 
   bool get _isSearch => searchQuery.trim().isNotEmpty;
 
@@ -62,137 +73,225 @@ class DishCard extends StatelessWidget {
       ),
       child: InkWell(
         onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Stack(
-              children: [
-                RecipeThumbnail(
-                  imageRef: top == null ? '' : resolveMediaUrl(top.imageRef),
-                  dish: group.name,
-                  title: group.name,
-                  height: 152,
-                ),
-                Positioned(
-                  top: 12,
-                  left: 12,
-                  child: _Pill(
-                    color: colors.card.withValues(alpha: 0.92),
-                    child: Text(
-                      '${group.recipeCount} recipe'
-                      '${group.recipeCount == 1 ? '' : 's'}',
-                      style: TextStyle(
-                        color: colors.ink,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 12,
-                  right: 12,
-                  child: _Pill(
-                    color: topIsRated
-                        ? colors.goldWash.withValues(alpha: 0.94)
-                        : colors.success.withValues(alpha: 0.92),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (topIsRated) ...[
-                          Icon(
-                            Icons.workspace_premium_rounded,
-                            size: 13,
-                            color: colors.gold,
-                          ),
-                          const SizedBox(width: 4),
-                        ],
-                        Text(
-                          topIsRated ? 'Top pick' : 'New',
-                          style: TextStyle(
-                            color: topIsRated ? colors.gold : colors.onAccent,
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+        child: horizontal
+            ? _horizontalBody(context, top: top, topIsRated: topIsRated)
+            : _bannerBody(context, top: top, topIsRated: topIsRated),
+      ),
+    );
+  }
+
+  /// Single-column layout: a fixed-width thumbnail on the left and the
+  /// summary on the right, so a full-width cell never leaves a tall
+  /// banner card half empty.
+  Widget _horizontalBody(
+    BuildContext context, {
+    required Recipe? top,
+    required bool topIsRated,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: 132,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              RecipeThumbnail(
+                imageRef: top == null ? '' : resolveMediaUrl(top.imageRef),
+                dish: group.name,
+                title: group.name,
+                width: 132,
+              ),
+              Positioned(top: 10, left: 10, child: _countPill(context)),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              TasteHubSpacing.lg,
+              TasteHubSpacing.md,
+              TasteHubSpacing.lg,
+              TasteHubSpacing.lg,
             ),
+            child: _content(
+              context,
+              top: top,
+              topIsRated: topIsRated,
+              showStatusPill: true,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Grid layout: full-width photo banner over the dish summary.
+  Widget _bannerBody(
+    BuildContext context, {
+    required Recipe? top,
+    required bool topIsRated,
+  }) {
+    final colors = context.tasteHubColors;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Stack(
+          children: [
+            RecipeThumbnail(
+              imageRef: top == null ? '' : resolveMediaUrl(top.imageRef),
+              dish: group.name,
+              title: group.name,
+              height: 152,
+            ),
+            Positioned(top: 12, left: 12, child: _countPill(context)),
+            Positioned(
+              top: 12,
+              right: 12,
+              child: _statusPill(colors: colors, topIsRated: topIsRated),
+            ),
+          ],
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              TasteHubSpacing.lg,
+              TasteHubSpacing.md,
+              TasteHubSpacing.lg,
+              TasteHubSpacing.lg,
+            ),
+            child: _content(
+              context,
+              top: top,
+              topIsRated: topIsRated,
+              showStatusPill: false,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Title, subtitle and rating row shared by both layouts. In the
+  /// horizontal layout the Top pick/New pill moves next to the title,
+  /// because there is no photo banner to sit on.
+  Widget _content(
+    BuildContext context, {
+    required Recipe? top,
+    required bool topIsRated,
+    required bool showStatusPill,
+  }) {
+    final colors = context.tasteHubColors;
+    final averageRating = topIsRated ? top!.averageRating : 0.0;
+    final ratingCount = topIsRated ? top!.ratingCount : 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
             Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  TasteHubSpacing.lg,
-                  TasteHubSpacing.md,
-                  TasteHubSpacing.lg,
-                  TasteHubSpacing.lg,
+              child: Text(
+                group.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+            ),
+            if (showStatusPill) ...[
+              const SizedBox(width: 8),
+              _statusPill(colors: colors, topIsRated: topIsRated),
+            ],
+          ],
+        ),
+        const SizedBox(height: TasteHubSpacing.xs),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_isSearch) ...[
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Icon(
+                  Icons.search_rounded,
+                  size: 14,
+                  color: colors.accent,
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      group.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: TasteHubSpacing.xs),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (_isSearch) ...[
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: Icon(
-                              Icons.search_rounded,
-                              size: 14,
-                              color: colors.accent,
-                            ),
-                          ),
-                          const SizedBox(width: 5),
-                        ],
-                        Expanded(
-                          child: Text(
-                            _subtitle,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: _isSearch
-                                      ? colors.accent
-                                      : colors.muted,
-                                  fontWeight: _isSearch
-                                      ? FontWeight.w600
-                                      : FontWeight.w400,
-                                ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Spacer(),
-                    const SizedBox(height: TasteHubSpacing.sm),
-                    Row(
-                      children: [
-                        RatingStars(
-                          value: topIsRated ? top.averageRating : 0,
-                          size: 16,
-                        ),
-                        const SizedBox(width: 7),
-                        RatingLabel(
-                          averageRating: topIsRated ? top.averageRating : 0,
-                          ratingCount: topIsRated ? top.ratingCount : 0,
-                          notRatedText: 'New dish',
-                        ),
-                      ],
-                    ),
-                  ],
+              ),
+              const SizedBox(width: 5),
+            ],
+            Expanded(
+              child: Text(
+                _subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: _isSearch ? colors.accent : colors.muted,
+                  fontWeight: _isSearch ? FontWeight.w600 : FontWeight.w400,
                 ),
               ),
             ),
           ],
         ),
+        const Spacer(),
+        const SizedBox(height: TasteHubSpacing.sm),
+        Row(
+          children: [
+            RatingStars(value: averageRating, size: 16),
+            const SizedBox(width: 7),
+            RatingLabel(
+              averageRating: averageRating,
+              ratingCount: ratingCount,
+              notRatedText: 'New dish',
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// How many recipes the dish holds, shown over the photo.
+  Widget _countPill(BuildContext context) {
+    final colors = context.tasteHubColors;
+
+    return _Pill(
+      color: colors.card.withValues(alpha: 0.92),
+      child: Text(
+        '${group.recipeCount} recipe${group.recipeCount == 1 ? '' : 's'}',
+        style: TextStyle(
+          color: colors.ink,
+          fontSize: 11.5,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  /// Top pick (rated) or New (unrated) badge.
+  Widget _statusPill({
+    required TasteHubColors colors,
+    required bool topIsRated,
+  }) {
+    return _Pill(
+      color: topIsRated
+          ? colors.goldWash.withValues(alpha: 0.94)
+          : colors.success.withValues(alpha: 0.92),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (topIsRated) ...[
+            Icon(Icons.workspace_premium_rounded, size: 13, color: colors.gold),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            topIsRated ? 'Top pick' : 'New',
+            style: TextStyle(
+              color: topIsRated ? colors.gold : colors.onAccent,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ),
     );
   }

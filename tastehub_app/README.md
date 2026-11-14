@@ -117,8 +117,8 @@ changed without reading the whole app; each file header states what it owns.
 
 | File | Owns |
 |---|---|
-| `lib/screens/home_screen.dart` | title bar, context-aware tagline, search, filters, add-recipe sheet, empty states, flat My recipes list |
-| `lib/widgets/dish_card.dart` | one dish card; top-pick/new badges and search matches |
+| `lib/screens/home_screen.dart` | title bar, context-aware tagline, search, filters, responsive dish grid (2/3-up, compact rows below 600px), add-recipe sheet, empty states, flat My recipes list |
+| `lib/widgets/dish_card.dart` | one dish card; banner grid layout or compact single-column row, top-pick/new badges and search matches |
 | `lib/screens/dish_screen.dart` | dish hero, “Best rated first” explainer, ranked rows |
 | `lib/widgets/recipe_list_card.dart` | one recipe row; optional rank badge and search match context, shared by dish and My recipes |
 

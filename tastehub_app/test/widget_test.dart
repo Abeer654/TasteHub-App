@@ -100,6 +100,28 @@ void main() {
     expect(beef, lessThan(chicken));
   });
 
+  testWidgets('a narrow window lays dish cards out as compact rows', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await _pumpApp(tester, username: 'junaid');
+
+    // Below the 600px breakpoint the grid is a single column, which would
+    // stretch the 300px banner card across the whole width. Those cells
+    // switch to the horizontal row layout instead.
+    final cards = tester.widgetList<DishCard>(find.byType(DishCard));
+    expect(cards, isNotEmpty);
+    expect(cards.every((card) => card.horizontal), isTrue);
+
+    // The status badge moves next to the title (no photo banner to sit
+    // on) and the shorter cell does not overflow.
+    expect(find.text('Top pick'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('marks an unrated recipe as new and ranks it last', (
     tester,
   ) async {
