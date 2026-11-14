@@ -240,7 +240,7 @@
                 {
                     "createdAt": "2026-10-11T13:06:12Z",
                     "id": 4,
-                    "name": "Chicken Tikka",
+                    "name": "Simple Chicken Tikka",
                     "ownerId": 1,
                     "ratings": [
                         {"userId": 1, "stars": 5, "proofImageRef": ""},
