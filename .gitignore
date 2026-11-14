@@ -39,7 +39,7 @@ compile_commands.json
 /tastehub-server
 
 # --- Runtime data and logs ---
-data/
+# data/ is tracked on purpose: the seeded demo dataset travels with the app.
 output/
 *.log
 *.tmp
@@ -48,6 +48,7 @@ output/
 *~
 *.bak
 *.backup.json
+!data/*.backup.json
 
 # Console demos write these next to their executable when run from the root.
 /session.txt
