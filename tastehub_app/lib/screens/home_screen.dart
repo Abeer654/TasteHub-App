@@ -79,6 +79,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<DishGroup> get _groups => groupRecipesByDish(_visibleRecipes);
 
+  /// The line under the wordmark follows what the screen is doing now
+  /// instead of always talking about picking a dish.
+  String get _tagline {
+    if (_query.isNotEmpty) {
+      return _myRecipesOnly
+          ? 'Your recipes matching "$_query".'
+          : 'Matching "$_query" across every dish.';
+    }
+    if (_myRecipesOnly) {
+      return 'Every recipe you have added, in one list.';
+    }
+    return 'Pick a dish, then pick the best recipe.';
+  }
+
   Future<void> _load({bool showSpinner = true}) async {
     final request = ++_requestNumber;
 
@@ -319,7 +333,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 7),
               Text(
-                'Pick a dish, then pick the best recipe.',
+                _tagline,
                 style: Theme.of(context).textTheme.bodyMedium
                     ?.copyWith(color: colors.muted),
               ),
@@ -567,12 +581,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       ? Icons.close_rounded
                       : Icons.add_rounded,
                   onAction: searching ? _clearSearch : _showAddOptions,
-                  secondaryActionLabel: !searching && _myRecipesOnly
+                  secondaryActionLabel: _myRecipesOnly
                       ? 'Show all dishes'
                       : null,
-                  onSecondaryAction: !searching && _myRecipesOnly
-                      ? _toggleMyRecipes
-                      : null,
+                  onSecondaryAction: _myRecipesOnly ? _toggleMyRecipes : null,
                 ),
               ),
             ),
@@ -621,7 +633,20 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// My recipes are a flat list: one card per recipe, never a dish card.
+  /// The header line explains the order and how many dishes the rows span.
   Widget _buildMyRecipeList(List<Recipe> recipes) {
+    final dishCount = recipes
+        .map(
+          (recipe) =>
+              recipe.dish.trim().isEmpty ? 'Recipes' : recipe.dish.trim(),
+        )
+        .toSet()
+        .length;
+    final dishWord = '$dishCount dish${dishCount == 1 ? '' : 'es'}';
+    final header = _query.isNotEmpty
+        ? 'Across $dishWord'
+        : 'Grouped by dish · $dishWord';
+
     return RefreshIndicator(
       onRefresh: () => _load(showSpinner: false),
       child: LayoutBuilder(
@@ -635,15 +660,26 @@ class _HomeScreenState extends State<HomeScreen> {
             physics: const AlwaysScrollableScrollPhysics(),
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             padding: EdgeInsets.fromLTRB(sidePadding, 2, sidePadding, 96),
-            itemCount: recipes.length,
+            itemCount: recipes.length + 1,
             separatorBuilder: (context, index) =>
                 const SizedBox(height: TasteHubSpacing.md),
             itemBuilder: (context, index) {
-              final recipe = recipes[index];
+              if (index == 0) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(2, 6, 2, 0),
+                  child: Text(
+                    header,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                );
+              }
+
+              final recipe = recipes[index - 1];
               return RecipeListCard(
                 recipe: recipe,
                 imageUrl: widget.api.resolveMediaUrl(recipe.imageRef),
                 showOwner: false,
+                searchQuery: _query,
                 onTap: () => _openRecipe(recipe),
               );
             },

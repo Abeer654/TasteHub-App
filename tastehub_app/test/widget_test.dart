@@ -6,7 +6,9 @@ import 'package:tastehub_app/app.dart';
 import 'package:tastehub_app/services/api_client.dart';
 import 'package:tastehub_app/services/session_controller.dart';
 import 'package:tastehub_app/services/theme_controller.dart';
+import 'package:tastehub_app/theme.dart';
 import 'package:tastehub_app/widgets/dish_card.dart';
+import 'package:tastehub_app/widgets/rating_stars.dart';
 import 'package:tastehub_app/widgets/recipe_list_card.dart';
 
 import 'support/api_fixtures.dart';
@@ -175,6 +177,61 @@ void main() {
     expect(find.text('Chicken Biryani'), findsOneWidget);
   });
 
+  testWidgets('My recipes search shows match context and a way out', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await _pumpApp(tester, username: 'junaid');
+
+    await tester.tap(find.text('My recipes'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Every recipe you have added, in one list.'),
+      findsOneWidget,
+    );
+    expect(find.text('Grouped by dish · 2 dishes'), findsOneWidget);
+    expect(find.byType(DishCard), findsNothing);
+
+    await tester.enterText(find.byType(TextField), 'biryani');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Your recipes matching "biryani".'), findsOneWidget);
+    expect(find.text('Across 1 dish'), findsOneWidget);
+    expect(find.text('Match in the title'), findsNWidgets(2));
+
+    await tester.enterText(find.byType(TextField), 'zzz');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No matching recipes'), findsOneWidget);
+    expect(find.text('Clear search'), findsOneWidget);
+    expect(find.text('Show all dishes'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Show all dishes'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Show all dishes'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Matching "zzz" across every dish.'), findsOneWidget);
+    expect(find.text('Show all dishes'), findsNothing);
+
+    await tester.ensureVisible(find.text('Clear search'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Clear search'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 dishes · 4 recipes'), findsOneWidget);
+    expect(
+      find.text('Pick a dish, then pick the best recipe.'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('opens a recipe and rates it', (tester) async {
     final requests = <http.Request>[];
     await _pumpApp(tester, username: 'junaid', requests: requests);
@@ -332,6 +389,69 @@ void main() {
     expect(find.text('2 dishes · 4 recipes'), findsOneWidget);
   });
 
+  testWidgets('Add photo opens the form on the photo section', (tester) async {
+    await _pumpApp(tester, username: 'junaid');
+    await _openDish(tester, 'Biryani');
+    await _openRecipe(tester, 'Chicken Biryani');
+
+    final addPhoto = find.text('Add photo');
+    expect(addPhoto, findsOneWidget);
+    await tester.ensureVisible(addPhoto);
+    await tester.pumpAndSettle();
+    await tester.tap(addPhoto);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: find.byType(AppBar),
+        matching: find.text('Edit recipe'),
+      ),
+      findsOneWidget,
+    );
+
+    // The photo card is scrolled near the top instead of staying below
+    // the fold behind the hero and details card.
+    expect(tester.getRect(find.text('Recipe photo')).top, lessThan(300));
+  });
+
+  testWidgets('rejects an incomplete YouTube link instead of saving it', (
+    tester,
+  ) async {
+    final requests = <http.Request>[];
+    await _pumpApp(tester, username: 'junaid', requests: requests);
+
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Write it manually'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField).first, 'Test Curry');
+
+    final youtube = find.widgetWithText(
+      TextField,
+      'https://www.youtube.com/...',
+    );
+    await tester.ensureVisible(youtube);
+    await tester.pumpAndSettle();
+    await tester.enterText(youtube, 'youtube.com/watch?v=abc');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Save recipe'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Enter a complete link, e.g. https://...'),
+      findsOneWidget,
+    );
+    expect(
+      requests.where(
+        (request) =>
+            request.method == 'POST' && request.url.path == '/api/recipes',
+      ),
+      isEmpty,
+    );
+  });
+
   testWidgets(
     'phone-width dark mode renders detail and form without overflow',
     (tester) async {
@@ -433,5 +553,27 @@ void main() {
       find.text('Pick a dish, then pick the best recipe.'),
     );
     expect(Theme.of(context).brightness, Brightness.dark);
+  });
+
+  testWidgets('rating stars expose one spoken rating label', (tester) async {
+    final handle = tester.ensureSemantics();
+    try {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildTasteHubTheme(Brightness.light),
+          home: const Scaffold(
+            body: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [RatingStars(value: 4.5), RatingStars(value: 0)],
+            ),
+          ),
+        ),
+      );
+
+      expect(find.bySemanticsLabel('Rated 4.5 out of 5 stars'), findsOneWidget);
+      expect(find.bySemanticsLabel('No rating yet'), findsOneWidget);
+    } finally {
+      handle.dispose();
+    }
   });
 }

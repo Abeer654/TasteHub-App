@@ -4,6 +4,9 @@
 //  Owns: thumbnail, optional rank badge, title, dish/owner/time line and
 //  the rating summary. DishScreen passes a rank; My recipes passes none,
 //  so the row shows the dish name instead of a rank.
+//
+//  During a search (searchQuery set) the row also reveals why it matched,
+//  mirroring what dish_card.dart does for the dish grid.
 // ============================================================
 
 import 'package:flutter/material.dart';
@@ -21,6 +24,7 @@ class RecipeListCard extends StatelessWidget {
     required this.onTap,
     this.rank,
     this.showOwner = true,
+    this.searchQuery = '',
   });
 
   final Recipe recipe;
@@ -34,6 +38,37 @@ class RecipeListCard extends StatelessWidget {
   /// Dish lists already name the dish above the rows, so they show the owner.
   /// My recipes hides the owner because it is always you.
   final bool showOwner;
+
+  /// The active search text, or an empty string on the normal lists.
+  final String searchQuery;
+
+  bool get _isSearch => searchQuery.trim().isNotEmpty;
+
+  /// Which part of the recipe matched the search, so a bare result row is
+  /// not mistaken for a random card. The server search is fuzzy, so a local
+  /// miss falls back to naming the query itself.
+  String get _matchLabel {
+    final query = searchQuery.trim().toLowerCase();
+
+    if (recipe.title.toLowerCase().contains(query)) {
+      return 'Match in the title';
+    }
+    if (recipe.dish.toLowerCase().contains(query)) {
+      return 'Match in dish "${recipe.dish}"';
+    }
+    for (final ingredient in recipe.ingredients) {
+      if (ingredient.toLowerCase().contains(query)) {
+        return 'Match: ingredient "$ingredient"';
+      }
+    }
+    if (recipe.steps.any((step) => step.toLowerCase().contains(query))) {
+      return 'Match in a cooking step';
+    }
+    if (recipe.ownerName.toLowerCase().contains(query)) {
+      return 'Match: owner "${recipe.ownerName}"';
+    }
+    return 'Match for "${searchQuery.trim()}"';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -110,6 +145,32 @@ class RecipeListCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
+                    if (_isSearch) ...[
+                      const SizedBox(height: 5),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.search_rounded,
+                            size: 14,
+                            color: colors.accent,
+                          ),
+                          const SizedBox(width: 5),
+                          Expanded(
+                            child: Text(
+                              _matchLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: colors.accent,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 4),
                     Text(
                       meta,

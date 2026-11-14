@@ -57,9 +57,14 @@ void main() {
         'http://example.test:8080/uploads/img_abc.png',
       );
       expect(
+        api.resolveMediaUrl('uploads/img_abc.png'),
+        'http://example.test:8080/uploads/img_abc.png',
+      );
+      expect(
         api.resolveMediaUrl('https://example.com/photo.jpg'),
         'https://example.com/photo.jpg',
       );
+      expect(api.resolveMediaUrl('not a link'), '');
     });
   });
 
@@ -86,10 +91,16 @@ void main() {
       api.token = 'test-token-junaid';
 
       await api.listRecipes();
-      expect(requests.last.headers['authorization'], 'Bearer test-token-junaid');
+      expect(
+        requests.last.headers['authorization'],
+        'Bearer test-token-junaid',
+      );
 
       await api.me();
-      expect(requests.last.headers['authorization'], 'Bearer test-token-junaid');
+      expect(
+        requests.last.headers['authorization'],
+        'Bearer test-token-junaid',
+      );
     });
 
     test('rejects an invalid password', () async {

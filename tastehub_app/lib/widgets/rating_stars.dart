@@ -22,21 +22,28 @@ class RatingStars extends StatelessWidget {
   Widget build(BuildContext context) {
     final starColor = color ?? context.tasteHubColors.gold;
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: List.generate(5, (index) {
-        final threshold = index + 1;
-        final IconData icon;
-        if (value >= threshold) {
-          icon = Icons.star_rounded;
-        } else if (value >= threshold - 0.5) {
-          icon = Icons.star_half_rounded;
-        } else {
-          icon = Icons.star_outline_rounded;
-        }
+    // One labelled node reads better than five unlabelled star icons.
+    return Semantics(
+      label: value > 0
+          ? 'Rated ${value.toStringAsFixed(1)} out of 5 stars'
+          : 'No rating yet',
+      excludeSemantics: true,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(5, (index) {
+          final threshold = index + 1;
+          final IconData icon;
+          if (value >= threshold) {
+            icon = Icons.star_rounded;
+          } else if (value >= threshold - 0.5) {
+            icon = Icons.star_half_rounded;
+          } else {
+            icon = Icons.star_outline_rounded;
+          }
 
-        return Icon(icon, size: size, color: starColor);
-      }),
+          return Icon(icon, size: size, color: starColor);
+        }),
+      ),
     );
   }
 }

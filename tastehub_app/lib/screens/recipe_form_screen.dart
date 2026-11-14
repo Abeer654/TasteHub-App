@@ -42,6 +42,7 @@ class RecipeFormScreen extends StatefulWidget {
     this.draftMessage,
     this.inferredFields = const [],
     this.followUpQuestions = const [],
+    this.scrollToPhoto = false,
   }) : assert(existing == null || initial == null);
 
   final ApiClient api;
@@ -52,12 +53,18 @@ class RecipeFormScreen extends StatefulWidget {
   final List<String> inferredFields;
   final List<String> followUpQuestions;
 
+  /// Open scrolled to the Recipe photo section (the detail hero's
+  /// "Add photo" shortcut) instead of starting at the top.
+  final bool scrollToPhoto;
+
   @override
   State<RecipeFormScreen> createState() => _RecipeFormScreenState();
 }
 
 class _RecipeFormScreenState extends State<RecipeFormScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  final GlobalKey _photoCardKey = GlobalKey();
+  final ScrollController _scrollController = ScrollController();
 
   late final TextEditingController _title;
   late final TextEditingController _dish;
@@ -113,10 +120,28 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
       _steps.add(_newRowController(step));
     }
     if (_steps.isEmpty) _steps.add(_newRowController());
+
+    if (widget.scrollToPhoto) {
+      // Wait for the first frame so the photo card has a context to scroll to.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToPhoto());
+    }
+  }
+
+  /// Brings the Recipe photo section near the top of the viewport.
+  void _scrollToPhoto() {
+    final cardContext = _photoCardKey.currentContext;
+    if (cardContext == null) return;
+    Scrollable.ensureVisible(
+      cardContext,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+      alignment: 0.08,
+    );
   }
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _title.dispose();
     _dish.dispose();
     _mainIngredient.dispose();
@@ -372,6 +397,7 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
           onCancel: _cancel,
         ),
         body: SingleChildScrollView(
+          controller: _scrollController,
           padding: TasteHubLayout.pagePadding(context),
           child: Center(
             child: ConstrainedBox(
@@ -405,6 +431,7 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
                     ),
                     const SizedBox(height: TasteHubSpacing.section),
                     SectionCard(
+                      key: _photoCardKey,
                       title: 'Recipe photo',
                       icon: Icons.photo_camera_outlined,
                       subtitle: 'The main photo shown on the dish card.',

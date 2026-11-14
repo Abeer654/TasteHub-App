@@ -117,10 +117,10 @@ changed without reading the whole app; each file header states what it owns.
 
 | File | Owns |
 |---|---|
-| `lib/screens/home_screen.dart` | title bar, search, filters, add-recipe sheet, empty states, flat My recipes list |
+| `lib/screens/home_screen.dart` | title bar, context-aware tagline, search, filters, add-recipe sheet, empty states, flat My recipes list |
 | `lib/widgets/dish_card.dart` | one dish card; top-pick/new badges and search matches |
 | `lib/screens/dish_screen.dart` | dish hero, “Best rated first” explainer, ranked rows |
-| `lib/widgets/recipe_list_card.dart` | one recipe row; optional rank badge, shared by dish and My recipes |
+| `lib/widgets/recipe_list_card.dart` | one recipe row; optional rank badge and search match context, shared by dish and My recipes |
 
 ### Recipe detail
 
@@ -129,7 +129,7 @@ delete). The visual pieces are independent:
 
 | File | Owns |
 |---|---|
-| `lib/screens/recipe_detail/recipe_hero.dart` | main photo, title overlay, add-photo shortcut |
+| `lib/screens/recipe_detail/recipe_hero.dart` | main photo, title overlay, add-photo shortcut (opens the form at the photo field) |
 | `lib/screens/recipe_detail/recipe_overview.dart` | owner/time/ingredient/rating chips |
 | `lib/screens/recipe_detail/ingredients_card.dart` | ingredient checklist |
 | `lib/screens/recipe_detail/steps_card.dart` | numbered cooking steps |
@@ -139,12 +139,13 @@ delete). The visual pieces are independent:
 
 ### Recipe form
 
-`recipe_form_screen.dart` owns controllers, upload, save and the dirty-form
-guard. The sections are independent:
+`recipe_form_screen.dart` owns controllers, upload, save, the dirty-form
+guard and the optional scroll to the photo section. The sections are
+independent:
 
 | File | Owns |
 |---|---|
-| `lib/screens/recipe_form/basics_fields.dart` | title, dish, ingredient, time, YouTube |
+| `lib/screens/recipe_form/basics_fields.dart` | title, dish, ingredient, time, YouTube (validated http(s) link) |
 | `lib/screens/recipe_form/ingredient_editor.dart` | ingredient rows |
 | `lib/screens/recipe_form/step_editor.dart` | numbered step rows |
 | `lib/screens/recipe_form/ai_draft_banner.dart` | review note for AI drafts |

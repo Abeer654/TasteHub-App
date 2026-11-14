@@ -3,7 +3,9 @@
 //
 //  Owns: the hero image, the dish/title overlay and the empty-photo state.
 //  When the recipe has no main photo, the owner gets a direct "Add photo"
-//  shortcut into the edit form. Rating photos never appear here.
+//  shortcut into the edit form (scrolling to the photo field there).
+//  A null callback dims the shortcut while the screen is busy, instead of
+//  silently doing nothing. Rating photos never appear here.
 // ============================================================
 
 import 'package:flutter/material.dart';
@@ -24,7 +26,10 @@ class RecipeHero extends StatelessWidget {
   final Recipe recipe;
   final String imageUrl;
   final bool canEdit;
-  final VoidCallback onAddPhoto;
+
+  /// Null while a rating or delete is in flight; the pill then shows as
+  /// disabled rather than swallowing the tap.
+  final VoidCallback? onAddPhoto;
 
   @override
   Widget build(BuildContext context) {
@@ -47,6 +52,8 @@ class RecipeHero extends StatelessWidget {
                   imageRef: imageUrl,
                   dish: recipe.dish,
                   title: recipe.title,
+                  width: constraints.maxWidth,
+                  height: height,
                   errorMessage: 'Photo link could not load',
                 ),
                 DecoratedBox(
@@ -66,35 +73,38 @@ class RecipeHero extends StatelessWidget {
                   Positioned(
                     top: 14,
                     right: 14,
-                    child: Material(
-                      color: Colors.white.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(999),
-                      child: InkWell(
-                        onTap: onAddPhoto,
+                    child: Opacity(
+                      opacity: onAddPhoto == null ? 0.55 : 1,
+                      child: Material(
+                        color: Colors.white.withValues(alpha: 0.92),
                         borderRadius: BorderRadius.circular(999),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 13,
-                            vertical: 8,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.add_a_photo_outlined,
-                                size: 16,
-                                color: Color(0xFF2D241C),
-                              ),
-                              const SizedBox(width: 6),
-                              const Text(
-                                'Add photo',
-                                style: TextStyle(
+                        child: InkWell(
+                          onTap: onAddPhoto,
+                          borderRadius: BorderRadius.circular(999),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 13,
+                              vertical: 8,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.add_a_photo_outlined,
+                                  size: 16,
                                   color: Color(0xFF2D241C),
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w700,
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 6),
+                                const Text(
+                                  'Add photo',
+                                  style: TextStyle(
+                                    color: Color(0xFF2D241C),
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),

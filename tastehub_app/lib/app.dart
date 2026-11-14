@@ -31,7 +31,7 @@ class TasteHubApp extends StatelessWidget {
           darkTheme: buildTasteHubTheme(Brightness.dark),
           themeMode: themeController.mode,
           home: session.restoring
-              ? _SplashScreen(colors: TasteHubColors.light)
+              ? const _SplashScreen()
               : session.isLoggedIn
               ? HomeScreen(
                   api: api,
@@ -46,16 +46,16 @@ class TasteHubApp extends StatelessWidget {
 }
 
 class _SplashScreen extends StatelessWidget {
-  const _SplashScreen({required this.colors});
-
-  final TasteHubColors colors;
+  const _SplashScreen();
 
   @override
   Widget build(BuildContext context) {
+    // Read the active theme so the spinner matches Dark mode too instead of
+    // staying on the hardcoded light accent.
+    final colors = context.tasteHubColors;
+
     return Scaffold(
-      body: Center(
-        child: CircularProgressIndicator(color: colors.accent),
-      ),
+      body: Center(child: CircularProgressIndicator(color: colors.accent)),
     );
   }
 }

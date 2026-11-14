@@ -116,13 +116,29 @@ class RecipeBasicsFields extends StatelessWidget {
             final youtubeField = TextFormField(
               controller: youtubeUrl,
               enabled: enabled,
-              textInputAction: TextInputAction.next,
+              // Last field of this section: finish editing instead of moving on.
+              textInputAction: TextInputAction.done,
               keyboardType: TextInputType.url,
               decoration: const InputDecoration(
                 labelText: 'YouTube URL (optional)',
                 hintText: 'https://www.youtube.com/...',
                 prefixIcon: Icon(Icons.smart_display_outlined, size: 19),
               ),
+              // The detail screen only shows the "Watch on YouTube" button for
+              // a usable http(s) link, so reject anything else here instead of
+              // saving a URL that silently never appears.
+              validator: (value) {
+                final text = (value ?? '').trim();
+                if (text.isEmpty) return null;
+
+                final uri = Uri.tryParse(text);
+                if (uri == null ||
+                    !(uri.scheme == 'http' || uri.scheme == 'https') ||
+                    uri.host.isEmpty) {
+                  return 'Enter a complete link, e.g. https://...';
+                }
+                return null;
+              },
             );
 
             if (constraints.maxWidth < 620) {

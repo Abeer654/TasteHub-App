@@ -3,7 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tastehub_app/services/theme_controller.dart';
 
-Future<SharedPreferences> _prefs([Map<String, Object> values = const {}]) async {
+Future<SharedPreferences> _prefs([
+  Map<String, Object> values = const {},
+]) async {
   SharedPreferences.setMockInitialValues(values);
   return SharedPreferences.getInstance();
 }

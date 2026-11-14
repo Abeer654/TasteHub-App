@@ -68,12 +68,16 @@ class ApiClient {
 
   /// Turns a stored image reference into something Image.network can load.
   /// Seed recipes use an empty reference and keep the gradient placeholder.
+  /// Relative upload paths resolve against the server even without a leading
+  /// "/" (a broken load still falls back to the placeholder) instead of
+  /// being mistaken for "no photo yet".
   String resolveMediaUrl(String reference) {
     final ref = reference.trim();
     if (ref.isEmpty) return '';
     if (ref.startsWith('http://') || ref.startsWith('https://')) return ref;
-    if (ref.startsWith('/')) return '$baseUrl$ref';
-    return '';
+    // Unknown schemes and loose text are not loadable references.
+    if (ref.contains('://') || ref.contains(' ')) return '';
+    return '$baseUrl${ref.startsWith('/') ? ref : '/$ref'}';
   }
 
   Future<dynamic> _request(

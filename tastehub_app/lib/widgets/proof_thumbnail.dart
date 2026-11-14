@@ -43,12 +43,16 @@ class ProofThumbnail extends StatelessWidget {
 
     if (imageUrl.isEmpty) return fallback;
 
+    // Decode at the thumbnail size; the full upload stays out of memory.
+    final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: Image.network(
         imageUrl,
         width: size,
         height: size,
+        cacheWidth: (size * pixelRatio).round(),
         fit: BoxFit.cover,
         errorBuilder: (_, _, _) => fallback,
         loadingBuilder: (context, child, progress) =>

@@ -46,6 +46,17 @@ class RecipeThumbnail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Decode near the on-screen size: lists would otherwise hold full-size
+    // uploads in memory. Only one dimension is set so the aspect ratio is
+    // preserved; an unsized widget (nothing to scale for) decodes as-is.
+    final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final int? cacheWidth = width != null
+        ? (width! * pixelRatio).round()
+        : null;
+    final int? cacheHeight = width == null && height != null
+        ? (height! * pixelRatio).round()
+        : null;
+
     return ClipRRect(
       borderRadius: borderRadius,
       child: SizedBox(
@@ -54,6 +65,8 @@ class RecipeThumbnail extends StatelessWidget {
         child: _isNetworkImage
             ? Image.network(
                 imageRef,
+                cacheWidth: cacheWidth,
+                cacheHeight: cacheHeight,
                 fit: BoxFit.cover,
                 errorBuilder: (_, _, _) => _placeholder(broken: true),
                 loadingBuilder: (context, child, progress) {

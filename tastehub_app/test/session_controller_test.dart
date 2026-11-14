@@ -4,7 +4,9 @@ import 'package:tastehub_app/services/session_controller.dart';
 
 import 'support/api_fixtures.dart';
 
-Future<SharedPreferences> _prefs([Map<String, Object> values = const {}]) async {
+Future<SharedPreferences> _prefs([
+  Map<String, Object> values = const {},
+]) async {
   SharedPreferences.setMockInitialValues(values);
   return SharedPreferences.getInstance();
 }

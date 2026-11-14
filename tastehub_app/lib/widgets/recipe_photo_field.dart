@@ -142,7 +142,9 @@ class RecipePhotoField extends StatelessWidget {
         TextField(
           controller: controller,
           enabled: enabled,
-          textInputAction: TextInputAction.next,
+          // Last field of the photo section: keep the preview visible above
+          // the keyboard instead of jumping to the next card.
+          textInputAction: TextInputAction.done,
           onChanged: onChanged,
           decoration: const InputDecoration(
             labelText: 'Recipe photo URL',

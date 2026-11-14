@@ -266,9 +266,8 @@ class _AiRecipeScreenState extends State<AiRecipeScreen> {
           Text(
             'Gemini turns your description into a structured recipe. You can '
             'edit every field before it is saved.',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: colors.muted),
+            style: Theme.of(context).textTheme.bodyMedium
+                ?.copyWith(color: colors.muted),
           ),
         ],
       ),
@@ -300,9 +299,8 @@ class _ErrorNote extends StatelessWidget {
           Expanded(
             child: Text(
               message,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: colors.error),
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: colors.error),
             ),
           ),
         ],

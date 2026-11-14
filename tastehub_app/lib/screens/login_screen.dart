@@ -117,6 +117,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       Row(
                         children: [
+                          // The wordmark stays one solid high-contrast colour
+                          // here: the accent gradient behind it cannot carry a
+                          // second accent tone at readable contrast in both
+                          // modes. The home header uses the two-tone mark on
+                          // its plain background.
                           RichText(
                             text: TextSpan(
                               style: Theme.of(context).textTheme.displaySmall
@@ -257,7 +262,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         color: colors.onAccent,
                       ),
                     )
-                  : Icon(_signup ? Icons.person_add_rounded : Icons.login_rounded),
+                  : Icon(
+                      _signup ? Icons.person_add_rounded : Icons.login_rounded,
+                    ),
               label: Text(
                 _busy
                     ? 'Please wait...'
@@ -306,9 +313,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   label: const Text('junaid / tastehub'),
                 ),
                 OutlinedButton.icon(
-                  onPressed: _busy
-                      ? null
-                      : () => _demoLogin('guest', 'guest'),
+                  onPressed: _busy ? null : () => _demoLogin('guest', 'guest'),
                   icon: const Icon(Icons.person_outline_rounded, size: 17),
                   label: const Text('guest / guest'),
                 ),
@@ -344,9 +349,8 @@ class _ErrorNote extends StatelessWidget {
           Expanded(
             child: Text(
               message,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: colors.error),
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: colors.error),
             ),
           ),
         ],
@@ -356,10 +360,7 @@ class _ErrorNote extends StatelessWidget {
 }
 
 class _ThemeMenu extends StatelessWidget {
-  const _ThemeMenu({
-    required this.controller,
-    this.onLight = false,
-  });
+  const _ThemeMenu({required this.controller, this.onLight = false});
 
   final ThemeController controller;
   final bool onLight;

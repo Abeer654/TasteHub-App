@@ -156,10 +156,16 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     }
   }
 
-  Future<void> _edit() async {
+  /// Opens the edit form. [scrollToPhoto] lands the user on the Recipe photo
+  /// section instead of the top of the form (used by the hero shortcut).
+  Future<void> _edit({bool scrollToPhoto = false}) async {
     final changed = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
-        builder: (_) => RecipeFormScreen(api: widget.api, existing: _recipe),
+        builder: (_) => RecipeFormScreen(
+          api: widget.api,
+          existing: _recipe,
+          scrollToPhoto: scrollToPhoto,
+        ),
       ),
     );
 
@@ -279,7 +285,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                     recipe: _recipe,
                     imageUrl: widget.api.resolveMediaUrl(_recipe.imageRef),
                     canEdit: _isOwner,
-                    onAddPhoto: busy ? () {} : _edit,
+                    onAddPhoto: busy ? null : () => _edit(scrollToPhoto: true),
                   ),
                   if (_error != null) ...[
                     const SizedBox(height: TasteHubSpacing.md),
