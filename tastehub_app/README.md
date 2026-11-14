@@ -7,7 +7,8 @@ The Android/Linux client for the TasteHub C++ server. It uses the JSON API in
 
 - Real login and signup with saved bearer tokens; expired sessions return to the
   login screen
-- Home screen grouped by dish, with **All dishes** and **My recipes** filters
+- Home screen grouped by dish, with **All dishes** and **My recipes** filters;
+  My recipes shows a flat list of your own recipes, never dish cards
 - Recipes ranked **inside each dish**: average rating, rating count, newest
   first; unrated recipes are marked **New** and the best rated is **Top pick**
 - Recipe detail with ingredients, steps, per-user ratings, rating photos and
@@ -104,8 +105,8 @@ per-dish top recipe.
 - `lib/theme.dart` — `TasteHubColors`, spacing/radii tokens, shared theme
 - `lib/widgets/` — shared pieces used by more than one screen:
   `section_card.dart`, `proof_thumbnail.dart`, `recipe_photo_field.dart`,
-  `recipe_thumbnail.dart`, `rating_stars.dart`, `status_views.dart`,
-  `dish_card.dart`
+  `recipe_thumbnail.dart`, `recipe_list_card.dart`, `rating_stars.dart`,
+  `status_views.dart`, `dish_card.dart`
 
 ## Screen sections (small hand-off units)
 
@@ -116,9 +117,10 @@ changed without reading the whole app; each file header states what it owns.
 
 | File | Owns |
 |---|---|
-| `lib/screens/home_screen.dart` | title bar, search, filters, add-recipe sheet, empty states |
+| `lib/screens/home_screen.dart` | title bar, search, filters, add-recipe sheet, empty states, flat My recipes list |
 | `lib/widgets/dish_card.dart` | one dish card; top-pick/new badges and search matches |
 | `lib/screens/dish_screen.dart` | dish hero, “Best rated first” explainer, ranked rows |
+| `lib/widgets/recipe_list_card.dart` | one recipe row; optional rank badge, shared by dish and My recipes |
 
 ### Recipe detail
 

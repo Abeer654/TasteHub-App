@@ -1,8 +1,9 @@
 // ============================================================
-//  home_screen.dart - dishes first, then ranked recipes
+//  home_screen.dart - all dishes, or a flat list of your recipes
 //
-//  The home screen groups every recipe by dish. Tapping a dish opens
-//  DishScreen, which ranks the recipes inside that dish. The old
+//  All dishes groups every recipe by dish. Tapping a dish opens
+//  DishScreen, which ranks the recipes inside that dish. My recipes
+//  skips the grouping and lists one card per recipe you own. The old
 //  global leaderboard tab is intentionally gone.
 // ============================================================
 
@@ -19,9 +20,11 @@ import '../services/theme_controller.dart';
 import '../theme.dart';
 import '../utils/ranking.dart';
 import '../widgets/dish_card.dart';
+import '../widgets/recipe_list_card.dart';
 import '../widgets/status_views.dart';
 import 'ai_recipe_screen.dart';
 import 'dish_screen.dart';
+import 'recipe_detail_screen.dart';
 import 'recipe_form_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -155,6 +158,20 @@ class _HomeScreenState extends State<HomeScreen> {
           session: widget.session,
           dish: group.name,
           initialRecipes: _recipes,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    _load(showSpinner: false);
+  }
+
+  Future<void> _openRecipe(Recipe recipe) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => RecipeDetailScreen(
+          api: widget.api,
+          session: widget.session,
+          recipe: recipe,
         ),
       ),
     );
@@ -466,6 +483,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final String text;
     if (_loading) {
       text = 'Loading...';
+    } else if (_myRecipesOnly) {
+      text = _query.isNotEmpty
+          ? '$count matching recipe${count == 1 ? '' : 's'}'
+          : '$count recipe${count == 1 ? '' : 's'}';
     } else if (_query.isNotEmpty) {
       text =
           '$count result${count == 1 ? '' : 's'} in '
@@ -492,10 +513,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildContent(BuildContext context) {
+    final recipes = _visibleRecipes;
     final groups = _groups;
 
     if (_loading && _recipes.isEmpty) {
-      return const LoadingView(message: 'Loading dishes...');
+      return LoadingView(
+        message: _myRecipesOnly
+            ? 'Loading your recipes...'
+            : 'Loading dishes...',
+      );
     }
 
     if (_error != null && _recipes.isEmpty) {
@@ -509,7 +535,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    if (groups.isEmpty) {
+    if (recipes.isEmpty) {
       final searching = _query.isNotEmpty;
       final title = searching
           ? 'No matching recipes'
@@ -555,6 +581,10 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
+    if (_myRecipesOnly) {
+      return _buildMyRecipeList(recipes);
+    }
+
     return RefreshIndicator(
       onRefresh: () => _load(showSpinner: false),
       child: LayoutBuilder(
@@ -582,6 +612,39 @@ class _HomeScreenState extends State<HomeScreen> {
                 resolveMediaUrl: widget.api.resolveMediaUrl,
                 searchQuery: _query,
                 onTap: () => _openDish(groups[index]),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  /// My recipes are a flat list: one card per recipe, never a dish card.
+  Widget _buildMyRecipeList(List<Recipe> recipes) {
+    return RefreshIndicator(
+      onRefresh: () => _load(showSpinner: false),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const maxWidth = 900.0;
+          final sidePadding = constraints.maxWidth > maxWidth
+              ? (constraints.maxWidth - maxWidth) / 2
+              : 0.0;
+
+          return ListView.separated(
+            physics: const AlwaysScrollableScrollPhysics(),
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: EdgeInsets.fromLTRB(sidePadding, 2, sidePadding, 96),
+            itemCount: recipes.length,
+            separatorBuilder: (context, index) =>
+                const SizedBox(height: TasteHubSpacing.md),
+            itemBuilder: (context, index) {
+              final recipe = recipes[index];
+              return RecipeListCard(
+                recipe: recipe,
+                imageUrl: widget.api.resolveMediaUrl(recipe.imageRef),
+                showOwner: false,
+                onTap: () => _openRecipe(recipe),
               );
             },
           );

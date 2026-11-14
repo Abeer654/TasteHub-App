@@ -6,6 +6,8 @@ import 'package:tastehub_app/app.dart';
 import 'package:tastehub_app/services/api_client.dart';
 import 'package:tastehub_app/services/session_controller.dart';
 import 'package:tastehub_app/services/theme_controller.dart';
+import 'package:tastehub_app/widgets/dish_card.dart';
+import 'package:tastehub_app/widgets/recipe_list_card.dart';
 
 import 'support/api_fixtures.dart';
 
@@ -125,6 +127,52 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Karahi'), findsNothing);
+  });
+
+  testWidgets('My recipes lists each recipe instead of dish cards', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await _pumpApp(tester, username: 'junaid');
+
+    await tester.tap(find.text('My recipes'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('My recipes · 4 recipes'), findsOneWidget);
+    expect(find.byType(DishCard), findsNothing);
+    expect(find.byType(RecipeListCard), findsNWidgets(4));
+    expect(find.text('Chicken Biryani'), findsOneWidget);
+    expect(find.text('Beef Biryani'), findsOneWidget);
+    expect(find.text('Chicken Karahi'), findsOneWidget);
+    expect(find.text('Mutton Karahi'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'biryani');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    expect(find.text('My recipes · 2 matching recipes'), findsOneWidget);
+    expect(find.text('Chicken Karahi'), findsNothing);
+
+    await tester.tap(find.text('Chicken Biryani'));
+    await tester.pumpAndSettle();
+    expect(find.text('Ingredients'), findsOneWidget);
+  });
+
+  testWidgets('My recipes hides recipes owned by someone else', (tester) async {
+    final recipes = demoRecipeSummaries();
+    recipes[1]['ownerId'] = 2;
+    recipes[1]['ownerName'] = 'guest';
+
+    await _pumpApp(tester, username: 'junaid', recipes: recipes);
+    await tester.tap(find.text('My recipes'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('My recipes · 3 recipes'), findsOneWidget);
+    expect(find.text('Beef Biryani'), findsNothing);
+    expect(find.text('Chicken Biryani'), findsOneWidget);
   });
 
   testWidgets('opens a recipe and rates it', (tester) async {
