@@ -19,7 +19,7 @@ CURL_LIBS ?= -lcurl
 INCLUDES := -Isrc -Ithird_party
 BUILD_DIR := build
 
-.PHONY: all server run demo reset-demo test http-test gemini-smoke \
+.PHONY: all server run demo test http-test gemini-smoke \
         app app-build app-run app-test app-api-check app-apk clean
 
 # Defaults for `make run` and `make demo`. Override them on the command line,
@@ -59,10 +59,6 @@ run: $(BUILD_DIR)/tastehub-server
 demo: $(BUILD_DIR)/tastehub-server
 	./$(BUILD_DIR)/tastehub-server --host 0.0.0.0 --port $(PORT) \
 		--data-dir $(DATA_DIR) --uploads-dir $(UPLOADS_DIR)
-
-# Replace local demo recipes/users and clear uploads (with a backup).
-reset-demo:
-	bash scripts/reset-demo.sh
 
 test: $(BUILD_DIR)/backend_test
 	./$(BUILD_DIR)/backend_test

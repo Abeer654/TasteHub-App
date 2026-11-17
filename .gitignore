@@ -37,7 +37,6 @@ compile_commands.json
 # --- Runtime data and logs ---
 # data/ is tracked on purpose: the seeded demo dataset travels with the app.
 # Runtime-generated files inside data/ are not.
-data/backups/
 output/
 *.log
 *.tmp

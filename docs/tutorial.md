@@ -80,18 +80,6 @@ previous token, which is useful for showing that recipes and ratings stay
 separate. Nobody can rate a recipe they authored - the `critic` account exists
 so the demo data still has recipes with ratings from several different users.
 
-## Reset the demo data
-
-To reset the demo recipes, users and uploaded photos from the clean seed:
-
-```bash
-make reset-demo
-```
-
-The previous `recipes.json`, `users.json` and uploads are backed up to
-`data/backups/<timestamp>/` first, so a demo can be restarted without losing the
-recipes and accounts created during it.
-
 ## Run the HTTP server
 
 The easiest way is `make run`:

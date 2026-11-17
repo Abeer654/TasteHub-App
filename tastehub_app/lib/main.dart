@@ -15,7 +15,7 @@ Future<void> main() async {
   final themeController = ThemeController(prefs: prefs);
 
   // Validate a saved token before the first frame. A stale token (for
-  // example after `make reset-demo`) simply falls back to the login screen.
+  // example after the server's data was reset) falls back to the login screen.
   await session.restore();
 
   runApp(

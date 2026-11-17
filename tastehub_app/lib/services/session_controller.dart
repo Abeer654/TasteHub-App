@@ -32,7 +32,7 @@ class SessionController extends ChangeNotifier {
   bool get restoring => _restoring;
 
   /// Restores a saved token and validates it with /api/auth/me.
-  /// An expired token (for example after `make reset-demo`) is discarded.
+  /// An expired or unknown token is discarded.
   Future<void> restore() async {
     final saved = prefs.getString(tokenKey) ?? '';
     if (saved.isEmpty) {
