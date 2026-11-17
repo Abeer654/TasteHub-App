@@ -241,10 +241,11 @@ int main(){
               "recipe 5 has ingredients");
         check(detail["steps"].is_array() && detail["steps"].size() >= 2,
               "recipe 5 has steps");
-        check(detail.value("imageRef", "") == "",
-              "seed recipes start with the empty photo placeholder");
-        check(!detail.value("youtubeUrl", "").empty(),
-              "recipe 5 keeps its youtubeUrl");
+        check(detail.value("imageRef", "")
+                    .rfind("https://upload.wikimedia.org/", 0) == 0,
+              "seed recipes ship with a hosted photo URL");
+        check(detail.value("youtubeUrl", "").empty(),
+              "seed recipes carry no youtube url");
         check(detail.value("myRating", -1) == 0,
               "anonymous detail has myRating 0");
         check(detail.value("ratingCount", 0) == 2,
@@ -414,8 +415,8 @@ int main(){
         string rawText = readWholeFile(testDir + "/recipes.json");
         check(rawText.find("/uploads/proof-biryani.jpg") != string::npos,
               "saving a rating writes the proof image to JSON");
-        check(rawText.find("\"imageRef\": \"\"") != string::npos,
-              "seed recipes keep their empty imageRef");
+        check(rawText.find("https://upload.wikimedia.org/") != string::npos,
+              "seed recipes keep their photo urls when a rating is saved");
 
         expectApiError(400, "rating below 1 returns 400", [&]{
             service->rateRecipe(5, 0, nullopt, junaid);
