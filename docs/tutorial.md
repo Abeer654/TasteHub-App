@@ -74,10 +74,12 @@ make
 |---|---|---|
 | `junaid` | `tastehub` | `1` |
 | `guest` | `guest` | `2` |
+| `critic` | `critic` | `3` |
 
 Each account has one active session. Logging in on another device replaces the
 previous token, which is useful for showing that recipes and ratings stay
-separate.
+separate. Nobody can rate a recipe they authored - the `critic` account exists
+so the demo data still has recipes with ratings from several different users.
 
 ## Run the CLI
 
@@ -236,7 +238,9 @@ curl -X POST http://127.0.0.1:8080/api/images \
   -F "file=@/path/to/my-biryani.jpg"
 ```
 
-Rate it with an optional proof image:
+Rate it with an optional proof image (recipe 7 belongs to `guest`, so
+`junaid`'s token is allowed; rating a recipe you authored yourself answers
+`403`):
 
 ```bash
 curl -X PUT http://127.0.0.1:8080/api/recipes/7/rating \

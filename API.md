@@ -395,7 +395,9 @@ Response:
 Rules:
 
 - `stars` must be an integer from `1` to `5`.
-- Any logged-in user may rate any recipe, including their own.
+- Any logged-in user may rate any recipe **except one they authored**. A
+  self-rating attempt returns `403` (`"You cannot rate your own recipe"`), and
+  clients hide the rating control on own recipes.
 - Each user has one rating per recipe. Sending a new rating updates that user's
   existing rating instead of adding a second one.
 - `proofImageRef` is optional. It accepts the same uploaded path or web URL as
@@ -405,6 +407,7 @@ Rules:
 - `myRating` and `myRatingProofImageRef` are per-user values; other users'
   ratings appear in the detail `ratings` array with their usernames.
 - Rating without login returns `401`. A malformed rating returns `400`.
+  Rating a recipe you own returns `403`; rating an unknown recipe `404`.
 
 ## Search
 
@@ -503,8 +506,10 @@ page needs the unrated recipes too. The browser page uses the same approach.
 ## Health
 
 ```json
-{ "status": "ok", "recipes": 18, "users": 2 }
+{ "status": "ok", "recipes": 18, "users": 3 }
 ```
 
 `recipes` counts individual recipes, not dishes. The seed data contains six
-dishes with three recipes each.
+dishes with three recipes each and three demo accounts: `junaid`, `guest` and
+`critic` (the critic re-homed the legacy self-ratings so no author rates their
+own recipe).

@@ -137,8 +137,8 @@ int main(){
         check(health.value("status", "") == "ok", "health status is ok");
         check(health.value("recipes", 0) == 18,
               "health reports 18 seed recipes");
-        check(health.value("users", 0) == 2,
-              "health reports the two demo accounts");
+        check(health.value("users", 0) == 3,
+              "health reports the three demo accounts");
 
         json junaidLogin = service->login(
             json{{"username", "junaid"}, {"password", "tastehub"}});
@@ -213,8 +213,20 @@ int main(){
               "anonymous list starts with myRating 0");
 
         json mine = service->listRecipes(junaid);
-        check(mine[0].value("myRating", -1) == 5,
-              "junaid sees his own rating in the list");
+        // Self-ratings are banned, so the first recipe (junaid's own)
+        // shows no rating for him...
+        check(mine[0].value("myRating", -1) == 0,
+              "an owner has no self-rating in the list");
+        // ...while his cross-rating on guest's Beef Biryani is visible.
+        bool junaidCrossRating = false;
+        for(const json& recipe : mine){
+            if(recipe.value("id", -1) == 15 &&
+               recipe.value("myRating", -1) == 4){
+                junaidCrossRating = true;
+            }
+        }
+        check(junaidCrossRating,
+              "junaid sees his cross-rating in the list");
 
         json detail = service->getRecipe(5);
         check(detail.value("title", "") == "Chicken Biryani",
@@ -241,15 +253,23 @@ int main(){
               "recipe 5 average rating is 5.0");
         check(detail["ratings"].is_array() && detail["ratings"].size() == 2,
               "recipe detail includes the ratings list");
-        check(detail["ratings"][0].value("userName", "") == "junaid",
+        // After the self-rating ban, recipe 5's first rating was re-homed
+        // to the critic account (its author junaid may not rate it).
+        bool criticRated = false;
+        bool guestRated = false;
+        for(const json& entry : detail["ratings"]){
+            if(entry.value("userName", "") == "critic") criticRated = true;
+            if(entry.value("userName", "") == "guest") guestRated = true;
+        }
+        check(criticRated && guestRated,
               "rating entries include usernames");
         check(detail.value("myRatingProofImageRef", "") == "",
               "recipe 5 starts without a proof image");
 
         json junaidDetail = service->getRecipe(5, junaid);
         json guestDetail = service->getRecipe(2, guest);
-        check(junaidDetail.value("myRating", 0) == 5,
-              "junaid sees his rating on recipe 5");
+        check(junaidDetail.value("myRating", 0) == 0,
+              "junaid has no rating on his own recipe");
         check(guestDetail.value("myRating", 0) == 4,
               "guest sees a different myRating on recipe 2");
 
@@ -364,25 +384,32 @@ int main(){
         // ----------------------------------------------------
         // 5. Rating with a proof image, per user
         // ----------------------------------------------------
+        // Recipe 5 belongs to junaid, so rating it is a self-rating.
+        expectApiError(403, "an author cannot rate their own recipe", [&]{
+            service->rateRecipe(5, 5, string("/uploads/proof-biryani.jpg"),
+                                junaid);
+        });
+
+        // He rates a recipe he does not own instead: Yakhni Pulao (guest's).
         json rating = service->rateRecipe(
-            5, 5, string("/uploads/proof-biryani.jpg"), junaid);
+            9, 5, string("/uploads/proof-biryani.jpg"), junaid);
         check(rating.value("myRating", 0) == 5,
               "rating response includes myRating");
         check(rating.value("myRatingProofImageRef", "")
                   == "/uploads/proof-biryani.jpg",
               "rating response includes the proof image");
 
-        detail = service->getRecipe(5, junaid);
+        detail = service->getRecipe(9, junaid);
         check(detail.value("myRatingProofImageRef", "")
                   == "/uploads/proof-biryani.jpg",
               "proof image is visible in recipe detail");
 
-        // Guest's rating on the same recipe must stay separate.
+        // Guest rates junaid's recipe 5 - a cross-rating, allowed.
         json guestRating = service->rateRecipe(5, 3, nullopt, guest);
         check(guestRating.value("myRating", 0) == 3,
               "guest has a separate rating on recipe 5");
-        check(service->getRecipe(5, junaid).value("myRating", 0) == 5,
-              "junaid's rating is unchanged by guest");
+        check(service->getRecipe(5, junaid).value("myRating", 0) == 0,
+              "the owner still has no rating on his own recipe");
 
         string rawText = readWholeFile(testDir + "/recipes.json");
         check(rawText.find("/uploads/proof-biryani.jpg") != string::npos,
@@ -562,7 +589,8 @@ int main(){
         check(karahiBoard["leaderboard"].back()["recipe"].value("id", -1) == 12,
               "unrated recipes come after rated recipes");
 
-        service->rateRecipe(12, 5, nullopt, junaid);
+        // Mutton Karahi is junaid's recipe, so the rating comes from guest.
+        service->rateRecipe(12, 5, nullopt, guest);
         karahiBoard = service->leaderboard("Karahi", junaid);
         check(leaderboardRank(karahiBoard, 12) == 1,
               "a new 5-star rating moves Mutton Karahi to #1");
@@ -595,7 +623,7 @@ int main(){
               "updated title survives reload");
         check(detail.value("imageRef", "") == "/uploads/updated-biryani.png",
               "updated imageRef survives reload");
-        detail = service->getRecipe(5, junaid);
+        detail = service->getRecipe(9, junaid);
         check(detail.value("myRatingProofImageRef", "")
                   == "/uploads/proof-biryani.jpg",
               "seed recipe proof image survives reload");

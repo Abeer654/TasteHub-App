@@ -1,14 +1,15 @@
 // ============================================================
 //  dish_card.dart - one dish on the home screen
 //
-//  Owns: the dish grid card. During a search it reveals the matching
-//  recipe names instead of only the top recipe, so a dish with several
-//  matches is not reduced to one title.
+//  Owns: the dish grid card. One layout for every width (H-05): a
+//  112dp card with a square photo on the left and a text column on the
+//  right. The old tall banner / compact row split is gone - a forced
+//  single column just gets narrower cards, never a different shape.
 //
-//  Two layouts: the 2/3-up grid uses a tall banner card; a forced
-//  single column (narrow window) switches to [horizontal], a compact
-//  left-thumbnail row like the My recipes list, so the card never
-//  stretches into an empty half-width banner.
+//  The card shows, top to bottom: dish name, "N recipes · time range",
+//  the "Best: <recipe>" line (or the search matches), and a compact
+//  rating. The earned "Top pick"/"New" badge sits 8dp inside the photo's
+//  top-left corner.
 // ============================================================
 
 import 'package:flutter/material.dart';
@@ -16,6 +17,7 @@ import 'package:flutter/material.dart';
 import '../models/dish_group.dart';
 import '../models/recipe.dart';
 import '../theme.dart';
+import '../utils/ranking.dart';
 import 'rating_stars.dart';
 import 'recipe_thumbnail.dart';
 
@@ -26,7 +28,6 @@ class DishCard extends StatelessWidget {
     required this.resolveMediaUrl,
     required this.onTap,
     this.searchQuery = '',
-    this.horizontal = false,
   });
 
   final DishGroup group;
@@ -36,9 +37,8 @@ class DishCard extends StatelessWidget {
   /// The active search text, or an empty string on the normal dish grid.
   final String searchQuery;
 
-  /// True in the home grid's single-column mode: lay out as a compact
-  /// horizontal row instead of a tall banner card.
-  final bool horizontal;
+  /// Fixed card height from H-05.
+  static const double height = 112;
 
   bool get _isSearch => searchQuery.trim().isNotEmpty;
 
@@ -55,14 +55,28 @@ class DishCard extends StatelessWidget {
 
     if (top == null) return 'No recipes yet';
     if (top.isRated) return 'Best: ${top.title}';
-    return 'No ratings yet - be the first to rate';
+    return 'No ratings yet';
+  }
+
+  /// `60 min`, `20-40 min`, or null when no recipe in the dish has a time.
+  String? get _timeRange {
+    final times =
+        group.recipes
+            .map((recipe) => recipe.cookingTime)
+            .where((time) => time > 0)
+            .toList()
+          ..sort();
+
+    if (times.isEmpty) return null;
+    final min = times.first;
+    final max = times.last;
+    return min == max ? '$min min' : '$min\u2013$max min';
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tasteHubColors;
     final top = group.topRecipe;
-    final topIsRated = top != null && top.isRated;
 
     return Material(
       color: colors.card,
@@ -73,239 +87,130 @@ class DishCard extends StatelessWidget {
       ),
       child: InkWell(
         onTap: onTap,
-        child: horizontal
-            ? _horizontalBody(context, top: top, topIsRated: topIsRated)
-            : _bannerBody(context, top: top, topIsRated: topIsRated),
+        child: SizedBox(
+          height: height,
+          child: Padding(
+            // H-05: photo inset 8dp from the card edge, 12dp gap to the
+            // text column.
+            padding: const EdgeInsets.fromLTRB(8, 0, 12, 0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  width: 112,
+                  child: Stack(
+                    children: [
+                      RecipeThumbnail(
+                        imageRef: top == null
+                            ? ''
+                            : resolveMediaUrl(top.imageRef),
+                        dish: group.name,
+                        title: group.name,
+                        width: 112,
+                        height: height,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        child: _statusPill(colors: colors, top: top),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: _content(context, top: top)),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
 
-  /// Single-column layout: a fixed-width thumbnail on the left and the
-  /// summary on the right, so a full-width cell never leaves a tall
-  /// banner card half empty. The Top pick/New badge sits on the photo
-  /// (like the banner layout) instead of beside the title, which would
-  /// squeeze dish names down to a few characters on phone widths.
-  Widget _horizontalBody(
-    BuildContext context, {
-    required Recipe? top,
-    required bool topIsRated,
-  }) {
+  /// The three text rows plus the rating row, distributed from the top
+  /// with the rating anchored 12dp above the card's bottom edge.
+  Widget _content(BuildContext context, {required Recipe? top}) {
     final colors = context.tasteHubColors;
+    final averageRating = top?.isRated == true ? top!.averageRating : 0.0;
+    final ratingCount = top?.isRated == true ? top!.ratingCount : 0;
+    final count =
+        '${group.recipeCount} recipe${group.recipeCount == 1 ? '' : 's'}';
+    final timeRange = _timeRange;
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SizedBox(
-          width: 104,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              RecipeThumbnail(
-                imageRef: top == null ? '' : resolveMediaUrl(top.imageRef),
-                dish: group.name,
-                title: group.name,
-                width: 104,
-              ),
-              Positioned(top: 10, left: 10, child: _countPill(context)),
-              Positioned(
-                bottom: 10,
-                left: 10,
-                child: _statusPill(colors: colors, topIsRated: topIsRated),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              TasteHubSpacing.lg,
-              TasteHubSpacing.md,
-              TasteHubSpacing.lg,
-              TasteHubSpacing.lg,
-            ),
-            child: _content(
-              context,
-              top: top,
-              topIsRated: topIsRated,
-              showStatusPill: false,
-            ),
-          ),
-        ),
-      ],
+    // Body copy inside a fixed-height card needs the tighter leading the
+    // theme's 1.55 would not leave room for.
+    final bodyStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      fontSize: 14,
+      height: 1.25,
+      letterSpacing: 0,
     );
-  }
-
-  /// Grid layout: full-width photo banner over the dish summary.
-  Widget _bannerBody(
-    BuildContext context, {
-    required Recipe? top,
-    required bool topIsRated,
-  }) {
-    final colors = context.tasteHubColors;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Stack(
-          children: [
-            RecipeThumbnail(
-              imageRef: top == null ? '' : resolveMediaUrl(top.imageRef),
-              dish: group.name,
-              title: group.name,
-              height: 152,
-            ),
-            Positioned(top: 12, left: 12, child: _countPill(context)),
-            Positioned(
-              top: 12,
-              right: 12,
-              child: _statusPill(colors: colors, topIsRated: topIsRated),
-            ),
-          ],
-        ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              TasteHubSpacing.lg,
-              TasteHubSpacing.md,
-              TasteHubSpacing.lg,
-              TasteHubSpacing.lg,
-            ),
-            child: _content(
-              context,
-              top: top,
-              topIsRated: topIsRated,
-              showStatusPill: false,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Title, subtitle and rating row shared by both layouts. In the
-  /// horizontal layout the Top pick/New pill lives on the thumbnail
-  /// instead (there is no photo banner, and a pill beside the title
-  /// truncates dish names on phone widths).
-  Widget _content(
-    BuildContext context, {
-    required Recipe? top,
-    required bool topIsRated,
-    required bool showStatusPill,
-  }) {
-    final colors = context.tasteHubColors;
-    final averageRating = topIsRated ? top!.averageRating : 0.0;
-    final ratingCount = topIsRated ? top!.ratingCount : 0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                group.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-            ),
-            if (showStatusPill) ...[
-              const SizedBox(width: 8),
-              _statusPill(colors: colors, topIsRated: topIsRated),
-            ],
-          ],
+        const SizedBox(height: 8),
+        Text(
+          group.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.titleLarge,
         ),
-        const SizedBox(height: TasteHubSpacing.xs),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_isSearch) ...[
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Icon(
-                  Icons.search_rounded,
-                  size: 14,
-                  color: colors.accent,
-                ),
-              ),
-              const SizedBox(width: 5),
-            ],
-            Expanded(
-              child: Text(
-                _subtitle,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: _isSearch ? colors.accent : colors.muted,
-                  fontWeight: _isSearch ? FontWeight.w600 : FontWeight.w400,
-                ),
-              ),
-            ),
-          ],
+        const SizedBox(height: 2),
+        Text(
+          timeRange == null ? count : '$count \u00b7 $timeRange',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: bodyStyle?.copyWith(color: colors.accentOnDark),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          _subtitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: bodyStyle?.copyWith(
+            color: _isSearch ? colors.accentOnDark : colors.muted,
+            fontWeight: _isSearch ? FontWeight.w600 : FontWeight.w400,
+          ),
         ),
         const Spacer(),
-        const SizedBox(height: TasteHubSpacing.sm),
-        Row(
-          children: [
-            RatingStars(value: averageRating, size: 16),
-            const SizedBox(width: 7),
-            // Scales down instead of overflowing the row when the label
-            // is wider than the space left beside the stars (very narrow
-            // cards, or large text scaling).
-            Flexible(
-              child: FittedBox(
-                alignment: Alignment.centerLeft,
-                fit: BoxFit.scaleDown,
-                child: RatingLabel(
-                  averageRating: averageRating,
-                  ratingCount: ratingCount,
-                  notRatedText: 'New dish',
-                ),
-              ),
-            ),
-          ],
+        CompactRating(
+          averageRating: averageRating,
+          ratingCount: ratingCount,
+          size: 14,
         ),
+        const SizedBox(height: 12),
       ],
     );
   }
 
-  /// How many recipes the dish holds, shown over the photo.
-  Widget _countPill(BuildContext context) {
-    final colors = context.tasteHubColors;
+  /// H-01: "Top pick" only when the dish's best recipe earned it
+  /// (`v >= 2` and `R >= 4.5`); an unrated dish keeps its "New" pill;
+  /// everything else gets no badge at all.
+  Widget _statusPill({required TasteHubColors colors, required Recipe? top}) {
+    final qualifies = earnsTopPick(top);
+
+    // No recipes, or a real rating that does not clear the bar: a badge
+    // that appears on every card means nothing (design principle 1).
+    if (top == null || (top.isRated && !qualifies)) {
+      return const SizedBox.shrink();
+    }
 
     return _Pill(
-      color: colors.card.withValues(alpha: 0.92),
-      child: Text(
-        '${group.recipeCount} recipe${group.recipeCount == 1 ? '' : 's'}',
-        style: TextStyle(
-          color: colors.ink,
-          fontSize: 11.5,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-  }
-
-  /// Top pick (rated) or New (unrated) badge.
-  Widget _statusPill({
-    required TasteHubColors colors,
-    required bool topIsRated,
-  }) {
-    return _Pill(
-      color: topIsRated
+      color: qualifies
           ? colors.goldWash.withValues(alpha: 0.94)
           : colors.success.withValues(alpha: 0.92),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (topIsRated) ...[
+          if (qualifies) ...[
             Icon(Icons.workspace_premium_rounded, size: 13, color: colors.gold),
             const SizedBox(width: 4),
           ],
           Text(
-            topIsRated ? 'Top pick' : 'New',
+            qualifies ? 'Top pick' : 'New',
             style: TextStyle(
-              color: topIsRated ? colors.gold : colors.onAccent,
+              color: qualifies ? colors.gold : colors.onAccent,
               fontSize: 11.5,
               fontWeight: FontWeight.w800,
             ),
@@ -325,7 +230,7 @@ class _Pill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: color,
         borderRadius: BorderRadius.circular(999),

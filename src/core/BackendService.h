@@ -408,7 +408,9 @@ public:
     // Rate a recipe 1-5. proofImageRef is optional:
     //   - omitted (std::nullopt): keep the existing proof photo
     //   - provided: replace it; an empty string clears it
-    // Any logged-in user may rate, including the recipe owner.
+    // Any logged-in user may rate any recipe EXCEPT their own:
+    // authors cannot rate their own recipes (403), so a star always
+    // comes from someone other than the cook.
     json rateRecipe(int id, int stars,
                     std::optional<string> proofImageRef,
                     const string& token){
@@ -421,6 +423,10 @@ public:
 
         RecipeRef ref = requireRecipe(id);
         Variant &variant = db.getDishes()[ref.dishIndex].getVariants()[ref.variantIndex];
+
+        if(variant.getOwnerId() == userId){
+            throw ApiException(403, "You cannot rate your own recipe");
+        }
 
         RecipeDatabase rollbackState = db;
         bool changed = false;

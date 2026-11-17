@@ -2,8 +2,9 @@
 //  dish_screen.dart - one dish and its ranked recipes
 //
 //  Owns: the dish header, the "Best rated first" explainer and the recipe
-//  list. Ranking itself is utils/ranking.dart, with the same rules as the
-//  server: average desc, rating count desc, newest first, unrated last.
+//  list. Ranking itself is utils/ranking.dart (D-05 Bayesian score, then
+//  rating count, then newest, unrated last) - the same order the dish
+//  card's "Best:" line uses.
 // ============================================================
 
 import 'package:flutter/material.dart';
@@ -55,10 +56,14 @@ class _DishScreenState extends State<DishScreen> {
   }
 
   List<Recipe> _forThisDish(Iterable<Recipe> recipes) {
+    final all = recipes.toList(growable: false);
     return rankRecipes(
-      recipes.where(
+      all.where(
         (recipe) => recipe.dish.toLowerCase() == widget.dish.toLowerCase(),
       ),
+      // Smooth against the whole app, not just this dish: the home card
+      // that led here computed its "Best:" line the same way.
+      globalMean: globalMeanRating(all),
     );
   }
 
@@ -131,7 +136,22 @@ class _DishScreenState extends State<DishScreen> {
           child: RefreshIndicator(
             onRefresh: () => _load(showSpinner: false),
             child: _loading && _recipes.isEmpty
-                ? const LoadingView(message: 'Loading recipes...')
+                // G-06 (4): placeholders at the real 88dp row size.
+                ? ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: EdgeInsets.fromLTRB(
+                      horizontal,
+                      TasteHubSpacing.sm,
+                      horizontal,
+                      110,
+                    ),
+                    children: [
+                      for (var i = 0; i < 3; i++) ...[
+                        const RecipeRowSkeleton(),
+                        const SizedBox(height: TasteHubSpacing.md),
+                      ],
+                    ],
+                  )
                 : _error != null && _recipes.isEmpty
                 ? ListView(
                     physics: const AlwaysScrollableScrollPhysics(),

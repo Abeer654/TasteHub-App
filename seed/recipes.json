@@ -11,7 +11,7 @@
                     "name": "Crispy Fries",
                     "ownerId": 1,
                     "ratings": [
-                        {"userId": 1, "stars": 5, "proofImageRef": ""},
+                        {"userId": 3, "stars": 5, "proofImageRef": ""},
                         {"userId": 2, "stars": 5, "proofImageRef": ""}
                     ],
                     "recipe": {
@@ -36,7 +36,7 @@
                     "ownerId": 2,
                     "ratings": [
                         {"userId": 1, "stars": 4, "proofImageRef": ""},
-                        {"userId": 2, "stars": 5, "proofImageRef": ""}
+                        {"userId": 3, "stars": 5, "proofImageRef": ""}
                     ],
                     "recipe": {
                         "cookingTime": 25,
@@ -59,7 +59,7 @@
                     "name": "Loaded Cheese Fries",
                     "ownerId": 1,
                     "ratings": [
-                        {"userId": 1, "stars": 4, "proofImageRef": ""}
+                        {"userId": 3, "stars": 4, "proofImageRef": ""}
                     ],
                     "recipe": {
                         "cookingTime": 30,
@@ -89,7 +89,7 @@
                     "name": "Hydrabadi Pulao",
                     "ownerId": 1,
                     "ratings": [
-                        {"userId": 1, "stars": 5, "proofImageRef": ""},
+                        {"userId": 3, "stars": 5, "proofImageRef": ""},
                         {"userId": 2, "stars": 4, "proofImageRef": ""}
                     ],
                     "recipe": {
@@ -114,7 +114,7 @@
                     "ownerId": 2,
                     "ratings": [
                         {"userId": 1, "stars": 5, "proofImageRef": ""},
-                        {"userId": 2, "stars": 5, "proofImageRef": ""}
+                        {"userId": 3, "stars": 5, "proofImageRef": ""}
                     ],
                     "recipe": {
                         "cookingTime": 60,
@@ -137,7 +137,7 @@
                     "name": "Chicken Pulao",
                     "ownerId": 1,
                     "ratings": [
-                        {"userId": 1, "stars": 4, "proofImageRef": ""}
+                        {"userId": 3, "stars": 4, "proofImageRef": ""}
                     ],
                     "recipe": {
                         "cookingTime": 40,
@@ -167,7 +167,7 @@
                     "name": "Peshawari Karahi",
                     "ownerId": 1,
                     "ratings": [
-                        {"userId": 1, "stars": 5, "proofImageRef": ""},
+                        {"userId": 3, "stars": 5, "proofImageRef": ""},
                         {"userId": 2, "stars": 4, "proofImageRef": ""}
                     ],
                     "recipe": {
@@ -192,7 +192,7 @@
                     "ownerId": 2,
                     "ratings": [
                         {"userId": 1, "stars": 4, "proofImageRef": ""},
-                        {"userId": 2, "stars": 4, "proofImageRef": ""}
+                        {"userId": 3, "stars": 4, "proofImageRef": ""}
                     ],
                     "recipe": {
                         "cookingTime": 35,
@@ -243,7 +243,7 @@
                     "name": "Simple Chicken Tikka",
                     "ownerId": 1,
                     "ratings": [
-                        {"userId": 1, "stars": 5, "proofImageRef": ""},
+                        {"userId": 3, "stars": 5, "proofImageRef": ""},
                         {"userId": 2, "stars": 4, "proofImageRef": ""}
                     ],
                     "recipe": {
@@ -268,7 +268,7 @@
                     "ownerId": 2,
                     "ratings": [
                         {"userId": 1, "stars": 4, "proofImageRef": ""},
-                        {"userId": 2, "stars": 4, "proofImageRef": ""}
+                        {"userId": 3, "stars": 4, "proofImageRef": ""}
                     ],
                     "recipe": {
                         "cookingTime": 40,
@@ -331,7 +331,7 @@
                         "cookingTime": 60
                     },
                     "ratings": [
-                        {"userId": 1, "stars": 5, "proofImageRef": ""},
+                        {"userId": 3, "stars": 5, "proofImageRef": ""},
                         {"userId": 2, "stars": 5, "proofImageRef": ""}
                     ],
                     "imageRef": "",
@@ -356,7 +356,7 @@
                     },
                     "ratings": [
                         {"userId": 1, "stars": 4, "proofImageRef": ""},
-                        {"userId": 2, "stars": 5, "proofImageRef": ""}
+                        {"userId": 3, "stars": 5, "proofImageRef": ""}
                     ],
                     "imageRef": "",
                     "youtubeUrl": "https://www.youtube.com/results?search_query=beef+biryani+recipe"
@@ -379,7 +379,7 @@
                         "cookingTime": 50
                     },
                     "ratings": [
-                        {"userId": 1, "stars": 4, "proofImageRef": ""}
+                        {"userId": 3, "stars": 4, "proofImageRef": ""}
                     ],
                     "imageRef": "",
                     "youtubeUrl": "https://www.youtube.com/results?search_query=vegetable+biryani+recipe"
@@ -409,7 +409,7 @@
                         "cookingTime": 180
                     },
                     "ratings": [
-                        {"userId": 1, "stars": 5, "proofImageRef": ""},
+                        {"userId": 3, "stars": 5, "proofImageRef": ""},
                         {"userId": 2, "stars": 5, "proofImageRef": ""}
                     ],
                     "imageRef": "",
@@ -434,7 +434,7 @@
                     },
                     "ratings": [
                         {"userId": 1, "stars": 4, "proofImageRef": ""},
-                        {"userId": 2, "stars": 4, "proofImageRef": ""}
+                        {"userId": 3, "stars": 4, "proofImageRef": ""}
                     ],
                     "imageRef": "",
                     "youtubeUrl": "https://www.youtube.com/results?search_query=chicken+nihari+recipe"

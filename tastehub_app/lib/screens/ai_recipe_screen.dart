@@ -22,6 +22,7 @@ class _AiRecipeScreenState extends State<AiRecipeScreen> {
   final TextEditingController _description = TextEditingController();
 
   bool _loading = false;
+  bool _cancelled = false;
   String? _error;
 
   static const List<String> _examples = [
@@ -49,12 +50,15 @@ class _AiRecipeScreenState extends State<AiRecipeScreen> {
 
     setState(() {
       _loading = true;
+      _cancelled = false;
       _error = null;
     });
 
     try {
       final draft = await widget.api.parseRecipe(text);
-      if (!mounted) return;
+      // Cancelled while waiting: drop the draft instead of pushing the
+      // form over whatever the user is doing now.
+      if (!mounted || _cancelled) return;
 
       // Push the form (instead of replacing this screen) so the home screen
       // waits for "Save recipe" before it reloads. Then close this screen with
@@ -73,12 +77,22 @@ class _AiRecipeScreenState extends State<AiRecipeScreen> {
       if (!mounted) return;
       Navigator.of(context).pop(changed);
     } on ApiException catch (error) {
-      if (!mounted) return;
+      if (!mounted || _cancelled) return;
       setState(() {
         _loading = false;
         _error = error.message;
       });
     }
+  }
+
+  /// G-06 (6): stop waiting for the draft. The in-flight request cannot be
+  /// aborted, but its result is dropped, so the screen is usable again.
+  void _cancelDraft() {
+    if (!_loading) return;
+    setState(() {
+      _cancelled = true;
+      _loading = false;
+    });
   }
 
   Future<void> _writeManually() async {
@@ -187,10 +201,25 @@ class _AiRecipeScreenState extends State<AiRecipeScreen> {
                             : const Icon(Icons.auto_awesome_rounded, size: 19),
                         label: Text(
                           _loading
-                              ? 'Asking Gemini for a draft...'
+                              ? 'Writing your draft...'
                               : 'Create AI draft',
                         ),
                       ),
+                      // G-06 (6): full-width progress plus a way out while
+                      // the draft is being written.
+                      if (_loading) ...[
+                        const SizedBox(height: 14),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: const LinearProgressIndicator(minHeight: 6),
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: _cancelDraft,
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                          label: const Text('Cancel'),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -264,7 +293,7 @@ class _AiRecipeScreenState extends State<AiRecipeScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Gemini turns your description into a structured recipe. You can '
+            'AI turns your description into a structured recipe. You can '
             'edit every field before it is saved.',
             style: Theme.of(context).textTheme.bodyMedium
                 ?.copyWith(color: colors.muted),

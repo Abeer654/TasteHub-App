@@ -27,7 +27,10 @@ Recipe _recipe({
 
 void main() {
   group('rankRecipes', () {
-    test('puts the highest average first, then the most rated', () {
+    test('smooths with the global mean instead of trusting the raw average', () {
+      // A lone 4.8 and a well-evidenced 4.0: raw averages put 4.8 first,
+      // D-05 pulls the thin sample back toward the global mean (4.07) and
+      // lets the vote count decide.
       final recipes = [
         _recipe(id: 1, averageRating: 4.0, ratingCount: 9),
         _recipe(id: 2, averageRating: 4.8, ratingCount: 1),
@@ -36,7 +39,12 @@ void main() {
 
       final ranked = rankRecipes(recipes);
 
-      expect(ranked.map((recipe) => recipe.id), [2, 1, 3]);
+      expect(ranked.map((recipe) => recipe.id), [2, 3, 1]);
+      expect(globalMeanRating(recipes), closeTo(4.07, 0.01));
+      expect(
+        bayesianScore(recipes[0], globalMeanRating(recipes)),
+        lessThan(bayesianScore(recipes[1], globalMeanRating(recipes))),
+      );
     });
 
     test('breaks a full tie with the newest recipe', () {
@@ -91,6 +99,35 @@ void main() {
       rankRecipes(recipes);
 
       expect(recipes.map((recipe) => recipe.id), [1, 2]);
+    });
+  });
+
+  group('earnsTopPick (H-01 with the modified D-05 threshold)', () {
+    test('needs at least 2 ratings averaging 4.5 or better', () {
+      expect(earnsTopPick(null), isFalse);
+      // One glowing vote is not evidence.
+      expect(
+        earnsTopPick(_recipe(id: 1, averageRating: 5, ratingCount: 1)),
+        isFalse,
+      );
+      // Plenty of votes, not a strong enough average.
+      expect(
+        earnsTopPick(_recipe(id: 1, averageRating: 4.4, ratingCount: 5)),
+        isFalse,
+      );
+      // Unrated recipes never earn it.
+      expect(
+        earnsTopPick(_recipe(id: 1, averageRating: 0, ratingCount: 0)),
+        isFalse,
+      );
+      expect(
+        earnsTopPick(_recipe(id: 1, averageRating: 4.5, ratingCount: 2)),
+        isTrue,
+      );
+      expect(
+        earnsTopPick(_recipe(id: 1, averageRating: 4.8, ratingCount: 3)),
+        isTrue,
+      );
     });
   });
 

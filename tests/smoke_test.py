@@ -301,8 +301,8 @@ def run_read_only_checks(base_url):
     check(health.get("status") == "ok", "health status is ok")
     check(health.get("recipes", 0) >= 18,
           "health reports the seeded recipes")
-    check(health.get("users", 0) >= 2,
-          "health reports the demo accounts")
+    check(health.get("users", 0) >= 3,
+          "health reports the three demo accounts")
 
     # ---- authentication ----
     junaid = login(base_url, "junaid", "tastehub")
@@ -338,9 +338,14 @@ def run_read_only_checks(base_url):
           "anonymous list has myRating 0")
 
     status, mine, _ = request(base_url, "GET", "/api/recipes", token=junaid)
+    # Self-ratings are banned: junaid owns recipe 5, so his visible
+    # rating is the cross-rating on guest's Yakhni Pulao (recipe 9).
     summary = find_recipe(mine, 5)
+    check(summary is not None and summary.get("myRating") == 0,
+          "an author has no self-rating on their own recipe")
+    summary = find_recipe(mine, 9)
     check(summary is not None and summary.get("myRating") == 5,
-          "a logged-in user sees their own rating")
+          "a logged-in user sees their cross-rating")
 
     status, detail, _ = request(base_url, "GET", "/api/recipes/5")
     check_status(status, 200, "recipe detail returns 200")
@@ -531,11 +536,18 @@ def run_mutation_checks(base_url, junaid, guest):
               for item in detail.get("ratings", [])),
           "detail ratings include the guest's name and stars")
 
-    # Rating an existing seed recipe as junaid replaces only his own rating.
-    status, rating, _ = request(
+    # Authors cannot rate their own recipes: recipe 5 belongs to junaid.
+    status, body, _ = request(
         base_url, "PUT", "/api/recipes/5/rating",
+        body={"stars": 5}, token=junaid)
+    check_error(status, body, 403, "an author cannot rate their own recipe")
+
+    # Rating an existing seed recipe he does not own replaces only his
+    # own rating.
+    status, rating, _ = request(
+        base_url, "PUT", "/api/recipes/9/rating",
         body={"stars": 5, "proofImageRef": image_ref}, token=junaid)
-    check_status(status, 200, "junaid can rate a seed recipe")
+    check_status(status, 200, "junaid can rate a recipe he does not own")
     check(rating.get("myRatingProofImageRef") == image_ref,
           "an uploaded image can be used as the rating proof")
 

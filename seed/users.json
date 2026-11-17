@@ -1,5 +1,5 @@
 {
-    "lastUserId": 2,
+    "lastUserId": 3,
     "users": [
         {
             "id": 1,
@@ -20,6 +20,16 @@
             "recoverySalt": "",
             "recoveryHash": "",
             "sessionHash": ""
+        },
+        {
+            "createdAt": "2026-11-16T04:59:36Z",
+            "id": 3,
+            "passwordHash": "25e4f9d97d1efd0335b7e073001473b15909d807f4b89d17b2640f61a0f27e77",
+            "recoveryHash": "",
+            "recoverySalt": "",
+            "salt": "9344a8f9a7d33de442d7d54b8839ff99",
+            "sessionHash": "",
+            "username": "critic"
         }
     ]
 }

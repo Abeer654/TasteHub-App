@@ -2,9 +2,10 @@
 //  recipe_thumbnail.dart - network image with a graceful fallback
 //
 //  Pass an already-resolved URL (ApiClient.resolveMediaUrl). Empty
-//  references and broken loads show a stable warm gradient with the
-//  recipe's first letter, which is what seed recipes use until a user
-//  uploads a photo or adds an image URL.
+//  references and broken loads show a stable warm gradient with a food
+//  icon chosen from the dish name (H-06/M-05) - seed recipes use this
+//  until a user uploads a photo or adds an image URL. No placeholder
+//  shows a letter any more.
 // ============================================================
 
 import 'package:flutter/material.dart';
@@ -18,6 +19,71 @@ const List<List<Color>> _palettes = [
   [Color(0xFF6B4E7A), Color(0xFFAD8FBC)],
 ];
 
+/// H-06: dish name → food icon, matched on substrings so "Chicken Biryani"
+/// and "Fried Fish" both land on the right one. Anything unrecognised falls
+/// back to generic cutlery, never to a letter.
+IconData dishIconFor(String dish) {
+  final name = dish.toLowerCase();
+
+  bool hasAny(List<String> words) => words.any(name.contains);
+
+  if (hasAny(const [
+    'biryani',
+    'pulao',
+    'rice',
+    'risotto',
+    'paella',
+    'fried rice',
+  ])) {
+    return Icons.rice_bowl_rounded;
+  }
+  if (hasAny(const ['fish', 'prawn', 'shrimp', 'salmon', 'seafood'])) {
+    return Icons.set_meal_rounded;
+  }
+  if (hasAny(const ['fries', 'burger', 'fastfood', 'fast food', 'nugget'])) {
+    return Icons.fastfood_rounded;
+  }
+  if (hasAny(const ['noodle', 'ramen', 'pasta', 'spaghetti', 'chow'])) {
+    return Icons.ramen_dining_rounded;
+  }
+  if (hasAny(const ['pizza'])) return Icons.local_pizza_rounded;
+  if (hasAny(const [
+    'cake',
+    'dessert',
+    'sweet',
+    'ice cream',
+    'icecream',
+    'donut',
+    'kheer',
+  ])) {
+    return Icons.cake_rounded;
+  }
+  if (hasAny(const ['egg', 'breakfast', 'pancake', 'toast'])) {
+    return Icons.free_breakfast_rounded;
+  }
+  if (hasAny(const [
+    'kebab',
+    'kabab',
+    'tikka',
+    'chicken',
+    'mutton',
+    'beef',
+    'karahi',
+    'korma',
+    'curry',
+    'steak',
+    'grill',
+    'meat',
+  ])) {
+    return Icons.lunch_dining_rounded;
+  }
+  if (hasAny(const ['soup', 'stew', 'dal', 'daal', 'shorba'])) {
+    return Icons.ramen_dining_rounded;
+  }
+
+  return Icons.restaurant_rounded;
+}
+
 class RecipeThumbnail extends StatelessWidget {
   const RecipeThumbnail({
     super.key,
@@ -28,6 +94,7 @@ class RecipeThumbnail extends StatelessWidget {
     this.height,
     this.borderRadius = BorderRadius.zero,
     this.errorMessage,
+    this.iconSize = 48,
   });
 
   final String imageRef;
@@ -38,8 +105,12 @@ class RecipeThumbnail extends StatelessWidget {
   final BorderRadius borderRadius;
 
   /// When set, a failed network image shows this message instead of the
-  /// letter placeholder. Small thumbnails leave it null to stay compact.
+  /// placeholder icon. Small thumbnails leave it null to stay compact.
   final String? errorMessage;
+
+  /// Placeholder food icon size: 48dp on heroes and cards (H-06),
+  /// 32dp in list thumbnails (M-05).
+  final double iconSize;
 
   bool get _isNetworkImage =>
       imageRef.startsWith('http://') || imageRef.startsWith('https://');
@@ -85,9 +156,7 @@ class RecipeThumbnail extends StatelessWidget {
       (total, unit) => total + unit,
     );
     final palette = _palettes[seed % _palettes.length];
-    final initial = title.trim().isNotEmpty
-        ? title.trim().characters.first.toUpperCase()
-        : 'T';
+    final icon = dishIconFor(dish.isNotEmpty ? dish : title);
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -134,14 +203,10 @@ class RecipeThumbnail extends StatelessWidget {
                       ],
                     ),
                   )
-                : Text(
-                    initial,
-                    style: TextStyle(
-                      fontSize: 64,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white.withValues(alpha: 0.72),
-                      height: 1,
-                    ),
+                : Icon(
+                    icon,
+                    size: iconSize,
+                    color: Colors.white.withValues(alpha: 0.4),
                   ),
           ),
         ],

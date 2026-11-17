@@ -1,5 +1,5 @@
 {
-    "lastUserId": 2,
+    "lastUserId": 3,
     "users": [
         {
             "createdAt": "2026-10-10T19:00:00Z",
@@ -8,7 +8,7 @@
             "recoveryHash": "",
             "recoverySalt": "",
             "salt": "c7a5d2a9294f66d15794d9c48bd5ac7e",
-            "sessionHash": "6c5ea335240936292cd94c914df711d1a842d7bb535b1830cbdbb97329623745",
+            "sessionHash": "7fb925ecd34963f7699f51f8bd5c33487feea2a3058f0626fe119eba598810bc",
             "username": "junaid"
         },
         {
@@ -20,6 +20,16 @@
             "salt": "38f6b554da7232355bc5959854a62398",
             "sessionHash": "",
             "username": "guest"
+        },
+        {
+            "createdAt": "2026-11-16T04:59:36Z",
+            "id": 3,
+            "passwordHash": "25e4f9d97d1efd0335b7e073001473b15909d807f4b89d17b2640f61a0f27e77",
+            "recoveryHash": "",
+            "recoverySalt": "",
+            "salt": "9344a8f9a7d33de442d7d54b8839ff99",
+            "sessionHash": "40d7c072ad6003ef4a001d8b1765ad1c5f4fb0cf1528a74cfe407facdf624450",
+            "username": "critic"
         }
     ]
 }

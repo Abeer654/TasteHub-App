@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tastehub_app/app.dart';
+import 'package:tastehub_app/screens/recipe_detail/recipe_rating_section.dart';
 import 'package:tastehub_app/services/api_client.dart';
 import 'package:tastehub_app/services/session_controller.dart';
 import 'package:tastehub_app/services/theme_controller.dart';
@@ -10,6 +11,7 @@ import 'package:tastehub_app/theme.dart';
 import 'package:tastehub_app/widgets/dish_card.dart';
 import 'package:tastehub_app/widgets/rating_stars.dart';
 import 'package:tastehub_app/widgets/recipe_list_card.dart';
+import 'package:tastehub_app/widgets/status_views.dart';
 
 import 'support/api_fixtures.dart';
 
@@ -77,7 +79,9 @@ void main() {
     expect(find.text('Welcome back'), findsNothing);
     expect(find.text('Biryani'), findsOneWidget);
     expect(find.text('Karahi'), findsOneWidget);
-    expect(find.text('2 dishes · 4 recipes'), findsOneWidget);
+    // H-04: the counts moved into the filter chips.
+    expect(find.text('All dishes · 2'), findsOneWidget);
+    expect(find.text('My recipes · 4'), findsOneWidget);
   });
 
   testWidgets('groups recipes by dish and drops the global leaderboard', (
@@ -91,16 +95,24 @@ void main() {
     expect(find.text('Best rated first'), findsOneWidget);
     expect(find.text('#1'), findsOneWidget);
     expect(find.text('#2'), findsOneWidget);
-    expect(find.text('Top pick'), findsOneWidget);
+    // H-01: Biryani's best recipe has a single 4.5 rating, so "#1" is a
+    // fact but the earned "Top pick" badge must stay hidden.
+    expect(find.text('Top pick'), findsNothing);
     expect(find.text('Beef Biryani'), findsOneWidget);
     expect(find.text('Chicken Biryani'), findsOneWidget);
 
     final beef = tester.getTopLeft(find.text('Beef Biryani')).dy;
     final chicken = tester.getTopLeft(find.text('Chicken Biryani')).dy;
     expect(beef, lessThan(chicken));
+
+    // Karahi's best recipe has 3 ratings at 4.8 - that one earns it.
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    await _openDish(tester, 'Karahi');
+    expect(find.text('Top pick'), findsOneWidget);
   });
 
-  testWidgets('a narrow window lays dish cards out as compact rows', (
+  testWidgets('a narrow window keeps the fixed 112dp dish card layout', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(360, 1400);
@@ -115,12 +127,12 @@ void main() {
     }
     await _pumpApp(tester, username: 'junaid', recipes: recipes);
 
-    // Below the 600px breakpoint the grid is a single column, which would
-    // stretch the 300px banner card across the whole width. Those cells
-    // switch to the horizontal row layout instead.
     final cards = tester.widgetList<DishCard>(find.byType(DishCard));
     expect(cards, isNotEmpty);
-    expect(cards.every((card) => card.horizontal), isTrue);
+
+    // H-05: one card shape at every width - 112dp tall, photo left.
+    final box = tester.renderObject<RenderBox>(find.byType(DishCard).first);
+    expect(box.size.height, DishCard.height);
 
     // The status badge lives on the thumbnail (left of the title), so the
     // dish name keeps the whole text column instead of being squeezed
@@ -140,6 +152,30 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('loading shows skeletons at the real card sizes', (tester) async {
+    // G-06 (4): placeholders shaped like the cards, not a spinner.
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTasteHubTheme(Brightness.light),
+        home: const Scaffold(
+          body: Column(
+            children: [DishCardSkeleton(), RecipeRowSkeleton()],
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      tester.getSize(find.byType(DishCardSkeleton)).height,
+      DishCard.height,
+    );
+    expect(
+      tester.getSize(find.byType(RecipeRowSkeleton)).height,
+      RecipeListCard.height,
+    );
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
   testWidgets('marks an unrated recipe as new and ranks it last', (
     tester,
   ) async {
@@ -149,7 +185,15 @@ void main() {
     expect(find.text('Chicken Karahi'), findsOneWidget);
     expect(find.text('Mutton Karahi'), findsOneWidget);
     expect(find.text('#1'), findsOneWidget);
-    expect(find.text('New - not rated'), findsOneWidget);
+    // G-05/M-03: the unrated recipe gets the "New" chip, never stars.
+    expect(find.text('New'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(RecipeListCard),
+        matching: find.byType(RatingStars),
+      ),
+      findsNothing,
+    );
 
     final chicken = tester.getTopLeft(find.text('Chicken Karahi')).dy;
     final mutton = tester.getTopLeft(find.text('Mutton Karahi')).dy;
@@ -163,7 +207,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
 
-    expect(find.text('2 results in 1 dish'), findsOneWidget);
+    // H-04: the chips carry the counts, so the summary line is gone.
+    expect(find.text('All dishes · 1'), findsOneWidget);
+    expect(find.text('My recipes · 2'), findsOneWidget);
     expect(
       find.text('2 matches: Beef Biryani, Chicken Biryani'),
       findsOneWidget,
@@ -180,10 +226,13 @@ void main() {
 
     await _pumpApp(tester, username: 'junaid');
 
-    await tester.tap(find.text('My recipes'));
+    await tester.tap(find.textContaining('My recipes'));
     await tester.pumpAndSettle();
 
-    expect(find.text('My recipes · 4 recipes'), findsOneWidget);
+    // H-04 counts in the chips, M-04 summary in the subtitle.
+    expect(find.text('My recipes · 4'), findsOneWidget);
+    expect(find.text('4 recipes'), findsOneWidget);
+    expect(find.text('4 need photos'), findsOneWidget);
     expect(find.byType(DishCard), findsNothing);
     expect(find.byType(RecipeListCard), findsNWidgets(4));
     expect(find.text('Chicken Biryani'), findsOneWidget);
@@ -191,11 +240,15 @@ void main() {
     expect(find.text('Chicken Karahi'), findsOneWidget);
     expect(find.text('Mutton Karahi'), findsOneWidget);
 
+    // M-01: grouped view puts sticky dish headers over the rows.
+    expect(find.text('BIRYANI · 2 recipes'), findsOneWidget);
+    expect(find.text('KARAHI · 2 recipes'), findsOneWidget);
+
     await tester.enterText(find.byType(TextField), 'biryani');
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
 
-    expect(find.text('My recipes · 2 matching recipes'), findsOneWidget);
+    expect(find.text('My recipes · 2'), findsOneWidget);
     expect(find.text('Chicken Karahi'), findsNothing);
 
     await tester.tap(find.text('Chicken Biryani'));
@@ -209,10 +262,11 @@ void main() {
     recipes[1]['ownerName'] = 'guest';
 
     await _pumpApp(tester, username: 'junaid', recipes: recipes);
-    await tester.tap(find.text('My recipes'));
+    await tester.tap(find.textContaining('My recipes'));
     await tester.pumpAndSettle();
 
-    expect(find.text('My recipes · 3 recipes'), findsOneWidget);
+    expect(find.text('My recipes · 3'), findsOneWidget);
+    expect(find.text('3 recipes'), findsOneWidget);
     expect(find.text('Beef Biryani'), findsNothing);
     expect(find.text('Chicken Biryani'), findsOneWidget);
   });
@@ -226,14 +280,13 @@ void main() {
 
     await _pumpApp(tester, username: 'junaid');
 
-    await tester.tap(find.text('My recipes'));
+    await tester.tap(find.textContaining('My recipes'));
     await tester.pumpAndSettle();
 
-    expect(
-      find.text('Every recipe you have added, in one list.'),
-      findsOneWidget,
-    );
-    expect(find.text('Grouped by dish · 2 dishes'), findsOneWidget);
+    // M-04: the slogan is replaced by a live summary.
+    expect(find.text('4 recipes'), findsOneWidget);
+    expect(find.text('4 need photos'), findsOneWidget);
+    expect(find.text('BIRYANI · 2 recipes'), findsOneWidget);
     expect(find.byType(DishCard), findsNothing);
 
     await tester.enterText(find.byType(TextField), 'biryani');
@@ -241,7 +294,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Your recipes matching "biryani".'), findsOneWidget);
-    expect(find.text('Across 1 dish'), findsOneWidget);
+    expect(find.text('All dishes · 1'), findsOneWidget);
+    expect(find.text('BIRYANI · 2 recipes'), findsOneWidget);
     expect(find.text('Match in the title'), findsNWidgets(2));
 
     await tester.enterText(find.byType(TextField), 'zzz');
@@ -265,7 +319,8 @@ void main() {
     await tester.tap(find.text('Clear search'));
     await tester.pumpAndSettle();
 
-    expect(find.text('2 dishes · 4 recipes'), findsOneWidget);
+    expect(find.text('All dishes · 2'), findsOneWidget);
+    expect(find.text('My recipes · 4'), findsOneWidget);
     expect(
       find.text('Pick a dish, then pick the best recipe.'),
       findsOneWidget,
@@ -274,7 +329,10 @@ void main() {
 
   testWidgets('opens a recipe and rates it', (tester) async {
     final requests = <http.Request>[];
-    await _pumpApp(tester, username: 'junaid', requests: requests);
+    // Chicken Biryani belongs to junaid; guest rates someone else's
+    // recipe, which is the only kind of rating the API accepts.
+    await _pumpApp(tester, username: 'guest', password: 'guest',
+        requests: requests);
 
     await _openDish(tester, 'Biryani');
     await _openRecipe(tester, 'Chicken Biryani');
@@ -284,13 +342,36 @@ void main() {
     expect(find.text('Marinate the chicken.'), findsOneWidget);
     expect(find.text('Your rating'), findsOneWidget);
 
+    // R-04: the summary row opens the per-star distribution. The same
+    // numbers also sit in the overview pill, so scope to this card.
+    final summary = find.descendant(
+      of: find.byType(RecipeRatingSection),
+      matching: find.text('4.0 from 2 ratings'),
+    );
+    expect(summary, findsOneWidget);
+    await tester.ensureVisible(summary);
+    await tester.pumpAndSettle();
+    await tester.tap(summary);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ratings'), findsOneWidget);
+    expect(find.text('5\u2605'), findsOneWidget);
+    expect(find.text('4\u2605'), findsOneWidget);
+    expect(find.text('1\u2605'), findsOneWidget);
+
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+
     final star = find.byKey(const ValueKey('star-4'));
     await tester.ensureVisible(star);
     await tester.pumpAndSettle();
     await tester.tap(star);
     await tester.pumpAndSettle();
 
-    expect(find.text('Rated 4 out of 5.'), findsOneWidget);
+    // R-04: instant feedback. This guest already had a 5, so Undo is
+    // offered; the API has no "remove rating" route for a first rating.
+    expect(find.text('Thanks! You rated 4\u2605'), findsOneWidget);
+    expect(find.text('Undo'), findsOneWidget);
     expect(
       requests.where(
         (request) =>
@@ -322,6 +403,37 @@ void main() {
     expect(find.byTooltip('More actions'), findsNothing);
   });
 
+  testWidgets('an author cannot rate their own recipe', (tester) async {
+    final requests = <http.Request>[];
+    await _pumpApp(tester, username: 'junaid', requests: requests);
+
+    await _openDish(tester, 'Biryani');
+    await _openRecipe(tester, 'Chicken Biryani');
+
+    // The card becomes a community summary: no star picker, no rating
+    // photo controls, and a note explaining the rule.
+    expect(find.text('Community rating'), findsOneWidget);
+    expect(find.text('Your rating'), findsNothing);
+    expect(find.byType(StarPicker), findsNothing);
+    expect(find.byKey(const ValueKey('star-4')), findsNothing);
+    expect(find.text('Add rating photo'), findsNothing);
+    expect(
+      find.text('You wrote it, so only others can rate it.'),
+      findsOneWidget,
+    );
+
+    // Owner-only edit and delete stay untouched.
+    expect(find.byTooltip('Edit recipe'), findsOneWidget);
+
+    expect(
+      requests.where(
+        (request) =>
+            request.method == 'PUT' && request.url.path.contains('/rating'),
+      ),
+      isEmpty,
+    );
+  });
+
   testWidgets('creates a recipe through the AI draft flow', (tester) async {
     await _pumpApp(tester, username: 'junaid');
 
@@ -350,13 +462,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Recipe saved.'), findsOneWidget);
-    expect(find.text('2 dishes · 5 recipes'), findsOneWidget);
+    expect(find.text('All dishes · 2'), findsOneWidget);
+    expect(find.text('My recipes · 5'), findsOneWidget);
   });
 
   testWidgets('shows the recipe title and keeps photo concepts separate', (
     tester,
   ) async {
-    await _pumpApp(tester, username: 'junaid');
+    // Guest (not the author) so the rating-photo controls are visible.
+    await _pumpApp(tester, username: 'guest', password: 'guest');
     await _openDish(tester, 'Biryani');
     await _openRecipe(tester, 'Chicken Biryani');
 
@@ -367,7 +481,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('No recipe photo yet - add one above'), findsOneWidget);
+    expect(find.text('No recipe photo yet'), findsOneWidget);
     expect(find.text('Add rating photo'), findsOneWidget);
     expect(find.text('Your rating photo'), findsNothing);
 
@@ -386,6 +500,9 @@ void main() {
   ) async {
     final recipes = demoRecipeSummaries();
     recipes[0]['myRatingProofImageRef'] = 'https://example.com/my-rating.jpg';
+    // The proof belongs to a rating on someone else's recipe: junaid
+    // cannot rate his own recipe, so guest owns this one.
+    recipes[0]['ownerId'] = 2;
     await _pumpApp(tester, username: 'junaid', recipes: recipes);
     await _openDish(tester, 'Biryani');
     await _openRecipe(tester, 'Chicken Biryani');
@@ -426,7 +543,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Recipe details'), findsNothing);
-    expect(find.text('2 dishes · 4 recipes'), findsOneWidget);
+    expect(find.text('All dishes · 2'), findsOneWidget);
   });
 
   testWidgets('Add photo opens the form on the photo section', (tester) async {
@@ -434,7 +551,7 @@ void main() {
     await _openDish(tester, 'Biryani');
     await _openRecipe(tester, 'Chicken Biryani');
 
-    final addPhoto = find.text('Add photo');
+    final addPhoto = find.text('Add a photo');
     expect(addPhoto, findsOneWidget);
     await tester.ensureVisible(addPhoto);
     await tester.pumpAndSettle();
@@ -469,7 +586,7 @@ void main() {
 
     final youtube = find.widgetWithText(
       TextField,
-      'https://www.youtube.com/...',
+      'https://www.youtube.com/watch?v=...',
     );
     await tester.ensureVisible(youtube);
     await tester.pumpAndSettle();
@@ -479,8 +596,9 @@ void main() {
     await tester.tap(find.text('Save recipe'));
     await tester.pumpAndSettle();
 
+    // E-02: no scheme and a playlist/search link never open one video.
     expect(
-      find.text('Enter a complete link, e.g. https://...'),
+      find.text('Paste a link to a single YouTube video.'),
       findsOneWidget,
     );
     expect(
@@ -499,7 +617,12 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
 
-      await _pumpApp(tester, username: 'junaid', prefs: {'theme_mode': 'dark'});
+      await _pumpApp(
+        tester,
+        username: 'guest',
+        password: 'guest',
+        prefs: {'theme_mode': 'dark'},
+      );
       expect(
         Theme.of(tester.element(find.byType(Scaffold))).brightness,
         Brightness.dark,
@@ -564,7 +687,7 @@ void main() {
     await tester.tap(find.text('Clear search'));
     await tester.pumpAndSettle();
 
-    expect(find.text('2 dishes · 4 recipes'), findsOneWidget);
+    expect(find.text('All dishes · 2'), findsOneWidget);
   });
 
   testWidgets('switches to dark mode and saves the choice', (tester) async {
@@ -575,10 +698,11 @@ void main() {
       ThemeMode.system,
     );
 
-    await tester.tap(find.byTooltip('Theme: System'));
+    // H-03: the theme toggle now lives inside the avatar menu.
+    await tester.tap(find.byTooltip('Account'));
     await tester.pumpAndSettle();
     await tester.tap(
-      find.widgetWithText(CheckedPopupMenuItem<ThemeMode>, 'Dark theme'),
+      find.widgetWithText(CheckedPopupMenuItem<ThemeMode>, 'Theme: Dark'),
     );
     await tester.pumpAndSettle();
 
@@ -593,6 +717,44 @@ void main() {
       find.text('Pick a dish, then pick the best recipe.'),
     );
     expect(Theme.of(context).brightness, Brightness.dark);
+  });
+
+  testWidgets('header collapses into a 56dp bar after 56dp of scroll', (
+    tester,
+  ) async {
+    // The default two-dish fixture fits on screen, so scroll only works
+    // with a list that overflows the viewport.
+    final recipes = [
+      for (var i = 0; i < 12; i++)
+        recipeSummaryJson(id: 100 + i, title: 'Recipe $i', dish: 'Dish $i'),
+    ];
+    await _pumpApp(tester, username: 'junaid', recipes: recipes);
+
+    final tagline = find.text('Pick a dish, then pick the best recipe.');
+    final search = find.byType(TextField);
+    final account = find.byTooltip('Account');
+
+    expect(tagline, findsOneWidget);
+    expect(search, findsOneWidget);
+    expect(account, findsOneWidget);
+
+    final restTop = tester.getTopLeft(search).dy;
+
+    // Still under the threshold: the expanded header must stay put.
+    await tester.drag(find.byType(GridView).first, const Offset(0, -30));
+    await tester.pumpAndSettle();
+    expect(tagline, findsOneWidget);
+    expect(tester.getTopLeft(search).dy, restTop);
+
+    // Past 56dp: the bar collapses, the subtitle goes, and both the
+    // avatar and the pinned search field stay on screen (H-03).
+    await tester.drag(find.byType(GridView).first, const Offset(0, -100));
+    await tester.pumpAndSettle();
+
+    expect(tagline, findsNothing);
+    expect(account, findsOneWidget);
+    expect(search, findsOneWidget);
+    expect(tester.getTopLeft(search).dy, lessThan(restTop));
   });
 
   testWidgets('rating stars expose one spoken rating label', (tester) async {

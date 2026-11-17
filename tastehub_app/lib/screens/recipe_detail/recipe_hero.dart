@@ -27,7 +27,7 @@ class RecipeHero extends StatelessWidget {
   final String imageUrl;
   final bool canEdit;
 
-  /// Null while a rating or delete is in flight; the pill then shows as
+  /// Null while a rating or delete is in flight; the button then shows as
   /// disabled rather than swallowing the tap.
   final VoidCallback? onAddPhoto;
 
@@ -69,41 +69,27 @@ class RecipeHero extends StatelessWidget {
                     ),
                   ),
                 ),
+                // Exactly one add-photo control: a centred button instead of
+                // the old corner pill plus an "add one above" caption.
                 if (!hasPhoto && canEdit)
-                  Positioned(
-                    top: 14,
-                    right: 14,
-                    child: Opacity(
-                      opacity: onAddPhoto == null ? 0.55 : 1,
-                      child: Material(
-                        color: Colors.white.withValues(alpha: 0.92),
-                        borderRadius: BorderRadius.circular(999),
-                        child: InkWell(
-                          onTap: onAddPhoto,
-                          borderRadius: BorderRadius.circular(999),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 13,
-                              vertical: 8,
+                  Positioned.fill(
+                    child: Align(
+                      alignment: const Alignment(0, -0.35),
+                      child: Opacity(
+                        opacity: onAddPhoto == null ? 0.55 : 1,
+                        child: FilledButton.tonalIcon(
+                          onPressed: onAddPhoto,
+                          icon: const Icon(Icons.add_a_photo_outlined, size: 18),
+                          label: const Text('Add a photo'),
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size(0, 48),
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.92,
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.add_a_photo_outlined,
-                                  size: 16,
-                                  color: Color(0xFF2D241C),
-                                ),
-                                const SizedBox(width: 6),
-                                const Text(
-                                  'Add photo',
-                                  style: TextStyle(
-                                    color: Color(0xFF2D241C),
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
+                            foregroundColor: const Color(0xFF2D241C),
+                            textStyle: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
@@ -149,7 +135,7 @@ class RecipeHero extends StatelessWidget {
                           height: 1.08,
                         ),
                       ),
-                      if (!hasPhoto) ...[
+                      if (!hasPhoto && !canEdit) ...[
                         const SizedBox(height: 6),
                         Row(
                           mainAxisSize: MainAxisSize.min,
@@ -162,9 +148,7 @@ class RecipeHero extends StatelessWidget {
                             const SizedBox(width: 6),
                             Flexible(
                               child: Text(
-                                canEdit
-                                    ? 'No recipe photo yet - add one above'
-                                    : 'No recipe photo yet',
+                                'No recipe photo yet',
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: 0.85),
                                   fontSize: 12.5,

@@ -71,8 +71,16 @@ void rateRecipe(RecipeDatabase &db, UserDatabase &users, int userId, int variant
     RecipeRef ref;
     if(!loadAll(db, users) || !findRecipe(db, variantId, ref)) return;
 
-    // Every signed-in user may rate any recipe, including their own. This
-    // keeps the demo flow simple and matches the HTTP API.
+    // Authors cannot rate their own recipes - the same rule the HTTP API
+    // enforces with 403 on PUT /api/recipes/:id/rating. The CLI writes the
+    // database directly, so it mirrors the check here.
+    Variant &found = db.getDishes()[ref.dishIndex].getVariants()[ref.variantIndex];
+    if(found.getOwnerId() == userId){
+        cout << "You wrote this recipe, so you cannot rate it - "
+             << "ratings come from other cooks.\n";
+        return;
+    }
+
     int stars = askChoice("Your rating from 1 (bad) to 5 (excellent), 0 to cancel: ", 0, 5);
     if(stars == 0) return;
 

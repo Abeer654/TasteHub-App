@@ -73,6 +73,7 @@ class TasteHubColors extends ThemeExtension<TasteHubColors> {
     required this.muted,
     required this.line,
     required this.accent,
+    required this.accentOnDark,
     required this.gold,
     required this.error,
     required this.success,
@@ -87,6 +88,11 @@ class TasteHubColors extends ThemeExtension<TasteHubColors> {
   final Color muted;
   final Color line;
   final Color accent;
+
+  /// Accent tuned for small text (< 18sp) sitting on a dark surface:
+  /// the base accent is too dim against near-black to clear 4.5:1.
+  /// In light mode there is no dark surface, so it equals [accent].
+  final Color accentOnDark;
   final Color gold;
   final Color error;
   final Color success;
@@ -105,6 +111,7 @@ class TasteHubColors extends ThemeExtension<TasteHubColors> {
     muted: Color(0xFF7D6E60),
     line: Color(0xFFE9DED0),
     accent: Color(0xFFBB4D2A),
+    accentOnDark: Color(0xFFBB4D2A),
     gold: Color(0xFFD98A2B),
     error: Color(0xFFA32C1D),
     success: Color(0xFF5B7B4B),
@@ -117,9 +124,10 @@ class TasteHubColors extends ThemeExtension<TasteHubColors> {
     background: Color(0xFF16120F),
     card: Color(0xFF221C17),
     ink: Color(0xFFF4EAE0),
-    muted: Color(0xFFB6A594),
+    muted: Color(0xFFC4BAAE),
     line: Color(0xFF3B3027),
     accent: Color(0xFFE9875F),
+    accentOnDark: Color(0xFFF0A27F),
     gold: Color(0xFFE6AE55),
     error: Color(0xFFEF8B7B),
     success: Color(0xFF9CBE82),
@@ -136,6 +144,7 @@ class TasteHubColors extends ThemeExtension<TasteHubColors> {
     Color? muted,
     Color? line,
     Color? accent,
+    Color? accentOnDark,
     Color? gold,
     Color? error,
     Color? success,
@@ -150,6 +159,7 @@ class TasteHubColors extends ThemeExtension<TasteHubColors> {
       muted: muted ?? this.muted,
       line: line ?? this.line,
       accent: accent ?? this.accent,
+      accentOnDark: accentOnDark ?? this.accentOnDark,
       gold: gold ?? this.gold,
       error: error ?? this.error,
       success: success ?? this.success,
@@ -169,6 +179,7 @@ class TasteHubColors extends ThemeExtension<TasteHubColors> {
       muted: Color.lerp(muted, other.muted, t)!,
       line: Color.lerp(line, other.line, t)!,
       accent: Color.lerp(accent, other.accent, t)!,
+      accentOnDark: Color.lerp(accentOnDark, other.accentOnDark, t)!,
       gold: Color.lerp(gold, other.gold, t)!,
       error: Color.lerp(error, other.error, t)!,
       success: Color.lerp(success, other.success, t)!,
@@ -260,9 +271,26 @@ ThemeData buildTasteHubTheme(Brightness brightness) {
         fontWeight: FontWeight.w700,
         color: colors.ink,
       ),
-      bodyLarge: TextStyle(fontSize: 16, height: 1.55, color: colors.ink),
-      bodyMedium: TextStyle(fontSize: 14, height: 1.55, color: colors.ink),
-      bodySmall: TextStyle(fontSize: 12.5, height: 1.45, color: colors.muted),
+      // Body styles keep neutral tracking (spec G-02); only uppercase
+      // Label styles may add positive letter-spacing.
+      bodyLarge: TextStyle(
+        fontSize: 16,
+        height: 1.55,
+        letterSpacing: 0,
+        color: colors.ink,
+      ),
+      bodyMedium: TextStyle(
+        fontSize: 14,
+        height: 1.55,
+        letterSpacing: 0,
+        color: colors.ink,
+      ),
+      bodySmall: TextStyle(
+        fontSize: 12.5,
+        height: 1.45,
+        letterSpacing: 0,
+        color: colors.muted,
+      ),
       labelLarge: TextStyle(
         fontSize: 14,
         fontWeight: FontWeight.w700,
@@ -353,7 +381,7 @@ ThemeData buildTasteHubTheme(Brightness brightness) {
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
-        foregroundColor: colors.accent,
+        foregroundColor: colors.accentOnDark,
         minimumSize: const Size(0, 40),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),

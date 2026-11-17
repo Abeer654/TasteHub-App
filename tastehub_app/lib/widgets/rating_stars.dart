@@ -1,5 +1,10 @@
 // ============================================================
-//  rating_stars.dart - read-only stars and the tap-to-rate picker
+//  rating_stars.dart - read-only stars, compact card ratings and the
+//  tap-to-rate picker
+//
+//  G-05 rule: detail screens may draw the full five-star row; cards use
+//  CompactRating (one star + "4.5 (2)") and unrated recipes show the
+//  outlined "New" chip. Five empty stars appear nowhere.
 // ============================================================
 
 import 'package:flutter/material.dart';
@@ -92,30 +97,79 @@ class StarPicker extends StatelessWidget {
   }
 }
 
-/// Compact "4.5 (2)" style label used beside [RatingStars].
-class RatingLabel extends StatelessWidget {
-  const RatingLabel({
+/// M-03: outlined "New" pill for a recipe nobody has rated yet.
+///
+/// Replaces the five empty stars a card used to draw - an empty star row
+/// carries no information (design principle 1).
+class NewRatingChip extends StatelessWidget {
+  const NewRatingChip({super.key, this.label = 'New'});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tasteHubColors;
+
+    return Semantics(
+      label: 'Not rated yet',
+      excludeSemantics: true,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: colors.accentOnDark),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: colors.accentOnDark,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// G-05: what cards show instead of a five-star row - one star plus
+/// `4.5 (2)`, or the [NewRatingChip] when nothing has rated yet.
+class CompactRating extends StatelessWidget {
+  const CompactRating({
     super.key,
     required this.averageRating,
     required this.ratingCount,
-    this.notRatedText = 'Not rated yet',
+    this.size = 14,
   });
 
   final double averageRating;
   final int ratingCount;
-  final String notRatedText;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
-    if (ratingCount == 0) {
-      return Text(notRatedText, style: Theme.of(context).textTheme.bodySmall);
-    }
+    final colors = context.tasteHubColors;
 
-    return Text(
-      '${averageRating.toStringAsFixed(1)} ($ratingCount)',
-      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-        color: context.tasteHubColors.ink,
-        fontWeight: FontWeight.w600,
+    if (ratingCount == 0) return const NewRatingChip();
+
+    return Semantics(
+      label: 'Rated ${averageRating.toStringAsFixed(1)} out of 5 from '
+          '$ratingCount rating${ratingCount == 1 ? '' : 's'}',
+      excludeSemantics: true,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.star_rounded, size: size + 3, color: colors.gold),
+          const SizedBox(width: 4),
+          Text(
+            '${averageRating.toStringAsFixed(1)} ($ratingCount)',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: colors.ink,
+              fontWeight: FontWeight.w600,
+              fontSize: size,
+            ),
+          ),
+        ],
       ),
     );
   }

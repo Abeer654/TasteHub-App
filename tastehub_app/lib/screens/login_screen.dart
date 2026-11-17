@@ -317,6 +317,13 @@ class _LoginScreenState extends State<LoginScreen> {
                   icon: const Icon(Icons.person_outline_rounded, size: 17),
                   label: const Text('guest / guest'),
                 ),
+                // The critic holds the community ratings that used to be
+                // self-ratings (D-04), so authors still have numbers to show.
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : () => _demoLogin('critic', 'critic'),
+                  icon: const Icon(Icons.person_outline_rounded, size: 17),
+                  label: const Text('critic / critic'),
+                ),
               ],
             ),
           ],

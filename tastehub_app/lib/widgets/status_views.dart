@@ -5,6 +5,8 @@
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import 'dish_card.dart';
+import 'recipe_list_card.dart';
 
 class StatusView extends StatelessWidget {
   const StatusView({
@@ -112,6 +114,8 @@ class LoadingView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Kept for short, unstructured waits; the list screens show the
+    // card skeletons instead (G-06 4).
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -123,6 +127,141 @@ class LoadingView extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(message, style: Theme.of(context).textTheme.bodySmall),
+        ],
+      ),
+    );
+  }
+}
+
+// ------------------------------------------------------------
+//  G-06 (4): skeleton cards
+//
+//  Loading shows placeholders shaped like the real cards instead of a
+//  spinner, so nothing jumps when the data lands. The blocks breathe with
+//  a slow pulse; they are pure decoration, so they carry no semantics.
+// ------------------------------------------------------------
+
+/// A single pulsing grey block. Null [width]/[height] means "take what
+/// the parent gives", which is what the flexible text bars want.
+class _PulseBox extends StatefulWidget {
+  const _PulseBox({this.width, this.height, this.radius = 6});
+
+  final double? width;
+  final double? height;
+  final double radius;
+
+  @override
+  State<_PulseBox> createState() => _PulseBoxState();
+}
+
+class _PulseBoxState extends State<_PulseBox>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tasteHubColors;
+
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) => Container(
+        width: widget.width,
+        height: widget.height,
+        decoration: BoxDecoration(
+          color: Color.lerp(colors.field, colors.line, _controller.value),
+          borderRadius: BorderRadius.circular(widget.radius),
+        ),
+        child: child,
+      ),
+    );
+  }
+}
+
+/// Loading stand-in for [DishCard]: same 112dp height, same square photo
+/// on the left, three bars on the right.
+class DishCardSkeleton extends StatelessWidget {
+  const DishCardSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tasteHubColors;
+
+    return Container(
+      height: DishCard.height,
+      padding: const EdgeInsets.fromLTRB(8, 14, 12, 14),
+      decoration: BoxDecoration(
+        color: colors.card,
+        borderRadius: TasteHubRadii.cardBorder,
+        border: Border.all(color: colors.line),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const _PulseBox(width: 84, radius: 12),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _PulseBox(width: 120, height: 16),
+                const SizedBox(height: 9),
+                _PulseBox(width: 150, height: 12),
+                const SizedBox(height: 9),
+                _PulseBox(width: 96, height: 12),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Loading stand-in for [RecipeListCard]: same 88dp height and 72dp
+/// thumbnail, three lines on the right.
+class RecipeRowSkeleton extends StatelessWidget {
+  const RecipeRowSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tasteHubColors;
+
+    return Container(
+      height: RecipeListCard.height,
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: colors.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: colors.line),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const _PulseBox(width: 72, radius: 12),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _PulseBox(width: 160, height: 15),
+                const SizedBox(height: 9),
+                _PulseBox(width: 120, height: 12),
+                const SizedBox(height: 9),
+                _PulseBox(width: 80, height: 12),
+              ],
+            ),
+          ),
         ],
       ),
     );

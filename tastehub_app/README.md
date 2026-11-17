@@ -15,7 +15,8 @@ The Android/Linux client for the TasteHub C++ server. It uses the JSON API in
   YouTube links
 - Add and edit recipes, including AI drafts you review before saving
 - Photo upload from the device gallery/file picker, or an image URL
-- Owner-only edit and delete; any logged-in user can rate
+- Owner-only edit and delete; any logged-in user can rate a recipe they did
+  not write (authors are blocked with 403 and see no rating control)
 - Unsaved-changes guard and a sticky save bar on the recipe form
 - System / Light / Dark theme, persisted with `shared_preferences`
 - Typo-tolerant search, grouped by dish
@@ -133,7 +134,7 @@ delete). The visual pieces are independent:
 | `lib/screens/recipe_detail/recipe_overview.dart` | owner/time/ingredient/rating chips |
 | `lib/screens/recipe_detail/ingredients_card.dart` | ingredient checklist |
 | `lib/screens/recipe_detail/steps_card.dart` | numbered cooking steps |
-| `lib/screens/recipe_detail/recipe_rating_section.dart` | your stars, your rating photo |
+| `lib/screens/recipe_detail/recipe_rating_section.dart` | your stars, your rating photo (community-only summary for authors) |
 | `lib/screens/recipe_detail/community_ratings.dart` | other people’s ratings |
 | `lib/screens/recipe_detail/rating_photo_dialog.dart` | rate + attach a rating photo |
 

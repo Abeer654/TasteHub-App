@@ -4,6 +4,15 @@
 //  Owns: the compact "Your rating" card. The star row saves a rating
 //  directly; "Add rating photo" opens the separate rating-photo dialog.
 //
+//  R-04: the summary row (stars + "4.5 from 2 ratings") is the handle for
+//  the rating-distribution bottom sheet, so both the author and a rater
+//  see the same breakdown. Authors still get no rating control at all
+//  (D-04), only the numbers.
+//
+//  Authors cannot rate their own recipe (the API answers 403), so with
+//  canRate = false the card drops every rating control and only reports
+//  what the community decided.
+//
 //  Important: this card is the only place your own rating photo appears.
 //  It is intentionally different from the recipe's main photo.
 // ============================================================
@@ -21,6 +30,7 @@ class RecipeRatingSection extends StatelessWidget {
     super.key,
     required this.recipe,
     required this.busy,
+    required this.canRate,
     required this.onRate,
     required this.onEditPhoto,
     required this.onOpenPhoto,
@@ -29,6 +39,7 @@ class RecipeRatingSection extends StatelessWidget {
 
   final Recipe recipe;
   final bool busy;
+  final bool canRate;
   final ValueChanged<int> onRate;
   final VoidCallback onEditPhoto;
   final ValueChanged<String> onOpenPhoto;
@@ -37,6 +48,22 @@ class RecipeRatingSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tasteHubColors;
+
+    // The author's variant: no star picker, no rating photo - just the
+    // community numbers this recipe actually has.
+    if (!canRate) {
+      return SectionCard(
+        title: 'Community rating',
+        icon: Icons.people_outline_rounded,
+        subtitle: 'You wrote it, so only others can rate it.',
+        child: _CommunitySummary(
+          recipe: recipe,
+          canRate: false,
+          onOpen: () => showRatingDistribution(context, recipe),
+        ),
+      );
+    }
+
     final hasProof = recipe.myRatingProofImageRef.isNotEmpty;
     final ratingPhotoUrl = resolveMediaUrl(recipe.myRatingProofImageRef);
 
@@ -96,7 +123,11 @@ class RecipeRatingSection extends StatelessWidget {
           const SizedBox(height: TasteHubSpacing.md),
           LayoutBuilder(
             builder: (context, constraints) {
-              final community = _CommunitySummary(recipe: recipe);
+              final community = _CommunitySummary(
+                recipe: recipe,
+                canRate: true,
+                onOpen: () => showRatingDistribution(context, recipe),
+              );
               final button = TextButton.icon(
                 onPressed: busy ? null : onEditPhoto,
                 icon: Icon(
@@ -158,8 +189,87 @@ class RecipeRatingSection extends StatelessWidget {
   }
 }
 
+/// R-04: the summary row - five stars plus `4.5 from 2 ratings` - and the
+/// entry point to the distribution sheet. Authors get the same row with
+/// no rating control anywhere on the card.
 class _CommunitySummary extends StatelessWidget {
-  const _CommunitySummary({required this.recipe});
+  const _CommunitySummary({
+    required this.recipe,
+    required this.canRate,
+    required this.onOpen,
+  });
+
+  final Recipe recipe;
+  final bool canRate;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tasteHubColors;
+
+    final Widget copy;
+    if (recipe.ratingCount == 0) {
+      copy = Row(
+        children: [
+          Icon(Icons.people_outline_rounded, size: 16, color: colors.muted),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              canRate
+                  ? 'No community ratings yet - yours could be the first.'
+                  : 'No community ratings yet.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        ],
+      );
+    } else {
+      copy = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          RatingStars(value: recipe.averageRating, size: 16),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              '${recipe.averageRating.toStringAsFixed(1)} from '
+              '${recipe.ratingCount} '
+              'rating${recipe.ratingCount == 1 ? '' : 's'}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colors.ink,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Icon(Icons.bar_chart_rounded, size: 15, color: colors.muted),
+        ],
+      );
+    }
+
+    // Tapping the numbers opens the per-star breakdown (R-04). With no
+    // ratings the sheet simply says so, so the target stays put.
+    return InkWell(
+      onTap: onOpen,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: copy,
+      ),
+    );
+  }
+}
+
+/// R-04: five rows, 5★ down to 1★, with a bar and a count each.
+void showRatingDistribution(BuildContext context, Recipe recipe) {
+  showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheetContext) => _DistributionSheet(recipe: recipe),
+  );
+}
+
+class _DistributionSheet extends StatelessWidget {
+  const _DistributionSheet({required this.recipe});
 
   final Recipe recipe;
 
@@ -167,34 +277,96 @@ class _CommunitySummary extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.tasteHubColors;
 
-    if (recipe.ratingCount == 0) {
-      return Row(
-        children: [
-          Icon(Icons.people_outline_rounded, size: 16, color: colors.muted),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              'No community ratings yet - yours could be the first.',
+    // Per-star counts come from the detail payload's ratings list; the
+    // summary numbers are what the server computed over the same rows.
+    final counts = List<int>.filled(6, 0);
+    for (final rating in recipe.ratings) {
+      if (rating.stars >= 1 && rating.stars <= 5) counts[rating.stars]++;
+    }
+    final total = recipe.ratings.length;
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 4, 24, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Ratings',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              recipe.ratingCount == 0
+                  ? 'No ratings yet'
+                  : '${recipe.averageRating.toStringAsFixed(1)} average · '
+                        '${recipe.ratingCount} '
+                        'rating${recipe.ratingCount == 1 ? '' : 's'}',
               style: Theme.of(context).textTheme.bodySmall,
             ),
-          ),
-        ],
-      );
-    }
-
-    return Wrap(
-      spacing: 8,
-      runSpacing: 4,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        RatingStars(value: recipe.averageRating, size: 16),
-        Text(
-          '${recipe.averageRating.toStringAsFixed(1)} average · '
-          '${recipe.ratingCount} rating${recipe.ratingCount == 1 ? '' : 's'}',
-          style: Theme.of(context).textTheme.bodySmall
-              ?.copyWith(color: colors.ink, fontWeight: FontWeight.w600),
+            const SizedBox(height: 18),
+            for (var stars = 5; stars >= 1; stars--)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 34,
+                      child: Text(
+                        '$stars\u2605',
+                        style: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(
+                              color: colors.ink,
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: SizedBox(
+                          height: 9,
+                          child: LayoutBuilder(
+                            builder: (context, constraints) => Row(
+                              children: [
+                                Container(
+                                  width: total == 0
+                                      ? 0
+                                      : constraints.maxWidth *
+                                            (counts[stars] / total),
+                                  color: colors.gold,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 32,
+                      child: Text(
+                        '${counts[stars]}',
+                        textAlign: TextAlign.right,
+                        style: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(
+                              color: colors.muted,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (total == 0)
+              Text(
+                'Be the first to rate this recipe.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

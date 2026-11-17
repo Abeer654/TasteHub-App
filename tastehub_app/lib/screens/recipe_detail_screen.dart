@@ -109,7 +109,12 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   }
 
   Future<void> _rate(int stars, {String? proofImageRef}) async {
-    if (_rating) return;
+    // Belt and braces: authors cannot rate their own recipe (the server
+    // answers 403) and the rating controls are hidden for them anyway.
+    if (_rating || _isOwner) return;
+    // R-04: the Undo action puts back whatever you had before, so it has
+    // to be read before the new summary lands.
+    final previous = _recipe.myRating;
     setState(() => _rating = true);
 
     try {
@@ -120,7 +125,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       );
       if (!mounted) return;
       setState(() => _recipe = _recipe.withRating(summary));
-      _snack('Rated $stars out of 5.');
+      _rateSnack(stars, previous);
       _loadDetail(showSpinner: false);
     } on ApiException catch (error) {
       _snack(error.message, isError: true);
@@ -129,7 +134,28 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     }
   }
 
+  /// R-04: instant feedback for a rating, with Undo when there is an older
+  /// rating to go back to. The API has no "remove my rating" route, so a
+  /// first rating cannot be undone - it is simply not offered.
+  void _rateSnack(int stars, int previous) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('Thanks! You rated $stars\u2605'),
+          action: previous > 0 && previous != stars
+              ? SnackBarAction(
+                  label: 'Undo',
+                  onPressed: () => _rate(previous),
+                )
+              : null,
+        ),
+      );
+  }
+
   Future<void> _showRatingPhotoDialog() async {
+    if (_isOwner) return;
     final result = await showDialog<RatingPhotoResult>(
       context: context,
       builder: (context) => RatingPhotoDialog(
@@ -308,6 +334,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                   RecipeRatingSection(
                     recipe: _recipe,
                     busy: busy,
+                    canRate: !_isOwner,
                     onRate: _rate,
                     onEditPhoto: _showRatingPhotoDialog,
                     onOpenPhoto: _openLink,
