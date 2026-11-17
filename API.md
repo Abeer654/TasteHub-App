@@ -9,9 +9,8 @@ Do not change field names without updating both sides.
 http://<laptop-tailscale-ip>:8080
 ```
 
-Opening the base URL in a browser serves a small read-only page that groups
-recipes by dish and shows the same rankings as the app. The JSON endpoints
-below are the actual client contract.
+Opening the base URL in a browser returns `404`; the JSON endpoints below are
+the client contract.
 
 Reads are public. Writes require a bearer token from `/api/auth/login` or
 `/api/auth/signup`.
@@ -272,7 +271,7 @@ GET /uploads/<filename>
 Uploading without a valid token returns `401`. A non-image or empty file
 returns `400`. A file over 10 MB returns `413`.
 
-The Flutter app and browser page resolve `/uploads/...` against the server base
+The Flutter app resolves `/uploads/...` against the server base
 URL. Absolute `http(s)` URLs are used as-is.
 
 ## AI recipe draft (natural-language input)
@@ -501,7 +500,7 @@ and `"isNew": true`, which the clients show as a **New** badge. The top recipe
 in a dish with at least one rating is highlighted as **Top pick**.
 
 The Flutter home screen groups `GET /api/recipes` client-side because a dish
-page needs the unrated recipes too. The browser page uses the same approach.
+page needs the unrated recipes too.
 
 ## Health
 

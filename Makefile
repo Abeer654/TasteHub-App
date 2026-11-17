@@ -2,7 +2,6 @@
 #
 # The AI extractor uses libcurl. On Debian/Ubuntu install libcurl4-openssl-dev.
 # `make run` builds and starts the HTTP server on 127.0.0.1:8080.
-# Open http://127.0.0.1:8080 in Chrome for a small recipe page.
 # `make demo` starts it on 0.0.0.0:8080 so other devices can connect.
 # `make test` is offline: backend_test injects a fake RecipeExtractor.
 # `make http-test` starts a temporary HTTP server and runs the API smoke test.
@@ -35,23 +34,17 @@ APP_API_URL ?= http://127.0.0.1:8080
 
 CORE_HEADERS := src/core/Models.h src/core/Storage.h src/core/Search.h \
                 src/core/AiRecipe.h src/core/BackendService.h
-CLI_HEADERS := src/cli/Console.h src/cli/UploadMenu.h \
-               src/cli/SearchMenu.h src/cli/ReviewMenu.h
 HTTP_HEADERS := third_party/httplib.h third_party/json.hpp
-WEB_HEADERS := src/WebPage.h
 
-all: $(BUILD_DIR)/tastehub $(BUILD_DIR)/backend_test $(BUILD_DIR)/tastehub-server
+all: $(BUILD_DIR)/backend_test $(BUILD_DIR)/tastehub-server
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-$(BUILD_DIR)/tastehub: src/main.cpp $(CLI_HEADERS) $(CORE_HEADERS) third_party/json.hpp | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) src/main.cpp -o $@ $(CURL_LIBS)
-
 $(BUILD_DIR)/backend_test: tests/backend_test.cpp $(CORE_HEADERS) third_party/json.hpp | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) tests/backend_test.cpp -o $@ $(CURL_LIBS)
 
-$(BUILD_DIR)/tastehub-server: src/server.cpp $(WEB_HEADERS) $(CORE_HEADERS) $(HTTP_HEADERS) | $(BUILD_DIR)
+$(BUILD_DIR)/tastehub-server: src/server.cpp $(CORE_HEADERS) $(HTTP_HEADERS) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) src/server.cpp -o $@ $(CURL_LIBS)
 
 server: $(BUILD_DIR)/tastehub-server
@@ -113,4 +106,4 @@ app-apk:
 
 clean:
 	rm -rf $(BUILD_DIR)
-	rm -f tastehub tastehub-server backend_test upload search rating
+	rm -f tastehub-server backend_test

@@ -74,23 +74,6 @@ def request(base_url, method, path, body=None, raw_body=None, token=None):
                 error.headers.get_content_type())
 
 
-def request_text(base_url, path, token=None):
-    """Return (status, body_text, content_type) for non-JSON routes."""
-    http_request = urllib.request.Request(base_url + path, method="GET")
-    if token:
-        http_request.add_header("Authorization", "Bearer " + token)
-
-    try:
-        with urllib.request.urlopen(http_request, timeout=10) as response:
-            return (response.status,
-                    response.read().decode(),
-                    response.headers.get_content_type())
-    except urllib.error.HTTPError as error:
-        return (error.code,
-                error.read().decode(),
-                error.headers.get_content_type())
-
-
 def request_bytes(base_url, path):
     """Return (status, body_bytes, content_type) for binary files."""
     http_request = urllib.request.Request(base_url + path, method="GET")
@@ -288,12 +271,6 @@ def check_duplicate_port_rejected(base_url, work_dir, log_path):
 # ------------------------------------------------------------
 
 def run_read_only_checks(base_url):
-    status, page, content_type = request_text(base_url, "/")
-    check_status(status, 200, "home page returns 200")
-    check(content_type == "text/html", "home page is served as HTML")
-    check("TasteHub" in page and "/api/recipes" in page,
-          "home page contains the browser app and API calls")
-
     status, health, content_type = request(base_url, "GET", "/api/health")
     check_status(status, 200, "health returns 200")
     check(content_type == "application/json",

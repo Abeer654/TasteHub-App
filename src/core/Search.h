@@ -10,7 +10,7 @@
 //    - every typed word must match somewhere, so multi-word searches stay precise
 //    - dish/title/main-ingredient matches count more than ingredient/step matches
 //
-//  BackendService (HTTP) and the console menus all use this matcher.
+//  BackendService (HTTP) and the tests all use this matcher.
 // ============================================================
 
 #include <algorithm>

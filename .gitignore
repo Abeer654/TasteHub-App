@@ -31,15 +31,13 @@ compile_commands.json
 *.gcno
 
 # Compiled demo programs (root only, so source names are safe)
-/tastehub
-/upload
-/search
-/rating
 /backend_test
 /tastehub-server
 
 # --- Runtime data and logs ---
 # data/ is tracked on purpose: the seeded demo dataset travels with the app.
+# Runtime-generated files inside data/ are not.
+data/backups/
 output/
 *.log
 *.tmp
@@ -48,7 +46,6 @@ output/
 *~
 *.bak
 *.backup.json
-!data/*.backup.json
 
 # Console demos write these next to their executable when run from the root.
 /session.txt

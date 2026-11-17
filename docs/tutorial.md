@@ -18,7 +18,6 @@ make
 
 This creates:
 
-- `build/tastehub` — the console app
 - `build/backend_test` — the backend acceptance test
 - `build/tastehub-server` — the HTTP server
 
@@ -81,22 +80,9 @@ previous token, which is useful for showing that recipes and ratings stay
 separate. Nobody can rate a recipe they authored - the `critic` account exists
 so the demo data still has recipes with ratings from several different users.
 
-## Run the CLI
+## Reset the demo data
 
-```bash
-./build/tastehub
-```
-
-The first screen lets you log in or create an account. The main menu then offers:
-
-1. Upload / edit / delete recipes
-2. Search recipes
-3. Rate / react / comment
-4. Account settings
-0. Exit
-
-Runtime data is stored in `data/`. To reset the demo recipes, users and uploaded
-photos from the clean seed:
+To reset the demo recipes, users and uploaded photos from the clean seed:
 
 ```bash
 make reset-demo
@@ -123,15 +109,10 @@ A normal startup looks like this:
 TasteHub HTTP server
   host:    127.0.0.1
   port:    8080
-  page:    http://127.0.0.1:8080/
   data:    data
   uploads: data/uploads
   recipes: 18
 ```
-
-Open http://127.0.0.1:8080 in a browser. The built-in page is read-only, groups
-recipes by dish, ranks the recipes inside each dish, searches, opens ingredients
-and steps, and shows uploaded photos and rating proofs.
 
 For a demo where a phone or another device must reach the server:
 
@@ -140,8 +121,7 @@ make demo
 ```
 
 `make demo` is the same as `make run`, but binds to `0.0.0.0` so other devices on
-the network can connect. On the other device, open
-`http://<this-computer-ip>:8080` in its browser.
+the network can connect. Point the Flutter app at `http://<this-computer-ip>:8080`.
 
 Change the port, data folder or uploads folder when needed:
 
@@ -159,12 +139,12 @@ The equivalent long command, if you prefer to run the binary directly:
   --data-dir data --uploads-dir data/uploads
 ```
 
-The server reads and writes the same `recipes.json` and `users.json` as the
-console app. It prints one line per request and never asks for console input.
+The server reads and writes `recipes.json` and `users.json` in the data folder.
+It prints one line per request and never asks for console input.
 Stop it with `Ctrl+C`.
 
-Run only one process against a data folder at a time. The console app and the
-server keep separate in-memory copies, so editing from both at once can overwrite
+Run only one server process against a data folder at a time. Two processes keep
+separate in-memory copies, so editing from both at once can overwrite
 changes.
 
 Options:
@@ -269,8 +249,7 @@ The full request and response contract is in `API.md`.
 
 ## Run the Flutter app
 
-The client lives in `tastehub_app/`. It talks to the same JSON API and does not
-need the C++ console.
+The client lives in `tastehub_app/`. It talks to the same JSON API.
 
 ### Linux desktop
 

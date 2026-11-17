@@ -339,7 +339,8 @@ int main(){
         search = service->searchRecipes("");
         check(search["results"].empty(), "empty search returns no results");
 
-        // The console menus use the free searchRecipes() function in Search.h.
+        // BackendService (HTTP) and the test use the free searchRecipes()
+        // function in Search.h.
         RecipeDatabase consoleDb(testDir);
         check(consoleDb.load(), "console search database loads");
         SearchResult consoleHits = searchRecipes(consoleDb, "chiken");

@@ -4,12 +4,10 @@
 //  This file is deliberately thin. It only:
 //    - reads command-line options,
 //    - turns HTTP requests into BackendService calls,
-//    - turns BackendService results or ApiExceptions into JSON,
-//    - serves one small browser page at "/".
+//    - turns BackendService results or ApiExceptions into JSON.
 //
 //  All recipe validation, storage, search and AI logic stays in
-//  BackendService and the core headers. The HTTP layer must never
-//  include Console.h or any of the console menu headers.
+//  BackendService and the core headers.
 //
 //  Build:  make server
 //  Run:    ./build/tastehub-server --host 127.0.0.1 --port 8080 --data-dir data
@@ -24,7 +22,6 @@
 #include <string>
 #include <system_error>
 #include "httplib.h"
-#include "WebPage.h"
 #include "core/BackendService.h"
 
 using namespace std;
@@ -293,14 +290,6 @@ void handleRequest(httplib::Response& response, Handler handler){
 
 void registerRoutes(httplib::Server& server, BackendService& service,
                     const string& uploadsDir){
-    // GET / - a small browser page. It is only HTML, CSS and JavaScript;
-    // every piece of data still comes from the JSON API routes below.
-    server.Get("/", [](const httplib::Request&, httplib::Response& response){
-        response.status = 200;
-        response.set_header("Cache-Control", "no-store");
-        response.set_content(kIndexHtml, "text/html; charset=utf-8");
-    });
-
     // GET /api/health - cheap readiness check, also used by the smoke test.
     server.Get("/api/health", [&service](const httplib::Request&,
                                          httplib::Response& response){
@@ -711,14 +700,9 @@ int main(int argc, char** argv){
 
         json health = service.health();
 
-        // 0.0.0.0 and :: are bind addresses, not useful browser addresses.
-        string pageHost = options.host;
-        if(pageHost == "0.0.0.0" || pageHost == "::") pageHost = "127.0.0.1";
-
         cout << "TasteHub HTTP server\n"
              << "  host:    " << options.host << "\n"
              << "  port:    " << options.port << "\n"
-             << "  page:    http://" << pageHost << ":" << options.port << "/\n"
              << "  data:    " << options.dataDir << "\n"
              << "  uploads: " << uploadsDir << "\n"
              << "  recipes: " << health.value("recipes", 0) << "\n";
