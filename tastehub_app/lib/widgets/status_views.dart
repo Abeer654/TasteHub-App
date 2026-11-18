@@ -186,8 +186,8 @@ class _PulseBoxState extends State<_PulseBox>
   }
 }
 
-/// Loading stand-in for [DishCard]: same 112dp height, same square photo
-/// on the left, three bars on the right.
+/// Loading stand-in for [DishCard]: same 112dp height, the same 96dp
+/// square photo inset 8dp on the top/bottom, three bars on the right.
 class DishCardSkeleton extends StatelessWidget {
   const DishCardSkeleton({super.key});
 
@@ -197,7 +197,7 @@ class DishCardSkeleton extends StatelessWidget {
 
     return Container(
       height: DishCard.height,
-      padding: const EdgeInsets.fromLTRB(8, 14, 12, 14),
+      padding: const EdgeInsets.fromLTRB(8, 0, 12, 0),
       decoration: BoxDecoration(
         color: colors.card,
         borderRadius: TasteHubRadii.cardBorder,
@@ -206,7 +206,10 @@ class DishCardSkeleton extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _PulseBox(width: 84, radius: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: const _PulseBox(width: DishCard.photoSize, radius: 12),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(

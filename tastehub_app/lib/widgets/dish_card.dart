@@ -40,6 +40,10 @@ class DishCard extends StatelessWidget {
   /// Fixed card height from H-05.
   static const double height = 112;
 
+  /// Side of the square photo: card height minus the 8dp inset on the
+  /// top and bottom edges, so the card's border never touches it.
+  static const double photoSize = height - 16;
+
   bool get _isSearch => searchQuery.trim().isNotEmpty;
 
   String get _subtitle {
@@ -90,32 +94,40 @@ class DishCard extends StatelessWidget {
         child: SizedBox(
           height: height,
           child: Padding(
-            // H-05: photo inset 8dp from the card edge, 12dp gap to the
-            // text column.
+            // H-05: 8dp to the photo, 12dp gap to the text column. The
+            // photo gets its 8dp top/bottom inset from the vertical
+            // padding below, so the card's rounded border and 20dp corner
+            // stop at the photo instead of cutting across the square
+            // image (the border used to run along the photo's top and
+            // bottom edges and shave its left corners).
             padding: const EdgeInsets.fromLTRB(8, 0, 12, 0),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SizedBox(
-                  width: 112,
-                  child: Stack(
-                    children: [
-                      RecipeThumbnail(
-                        imageRef: top == null
-                            ? ''
-                            : resolveMediaUrl(top.imageRef),
-                        dish: group.name,
-                        title: group.name,
-                        width: 112,
-                        height: height,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      Positioned(
-                        top: 8,
-                        left: 8,
-                        child: _statusPill(colors: colors, top: top),
-                      ),
-                    ],
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: SizedBox(
+                    // Square photo inside the 112dp card: 112 - 2 * 8.
+                    width: photoSize,
+                    child: Stack(
+                      children: [
+                        RecipeThumbnail(
+                          imageRef: top == null
+                              ? ''
+                              : resolveMediaUrl(top.imageRef),
+                          dish: group.name,
+                          title: group.name,
+                          width: photoSize,
+                          height: photoSize,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        Positioned(
+                          top: 8,
+                          left: 8,
+                          child: _statusPill(colors: colors, top: top),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),

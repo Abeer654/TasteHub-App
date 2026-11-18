@@ -677,7 +677,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
         return GridView.builder(
           physics: const NeverScrollableScrollPhysics(),
-          padding: const EdgeInsets.only(top: 2, bottom: 96),
+          padding: const EdgeInsets.only(top: 16, bottom: 96),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: columns,
             crossAxisSpacing: 16,
@@ -786,7 +786,7 @@ class _HomeScreenState extends State<HomeScreen> {
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             // Bottom padding clears the FloatingActionButton so it never
             // sits on the last card: 56dp FAB + 16dp gap + 24dp margin.
-            padding: const EdgeInsets.only(top: 2, bottom: 96),
+            padding: const EdgeInsets.only(top: 16, bottom: 96),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: columns,
               crossAxisSpacing: 16,
@@ -827,7 +827,7 @@ class _HomeScreenState extends State<HomeScreen> {
           final slivers = <Widget>[
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(2, 4, 2, 6),
+                padding: const EdgeInsets.fromLTRB(2, 0, 2, 6),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
@@ -869,7 +869,7 @@ class _HomeScreenState extends State<HomeScreen> {
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             slivers: [
               SliverPadding(
-                padding: EdgeInsets.fromLTRB(sidePadding, 2, sidePadding, 96),
+                padding: EdgeInsets.fromLTRB(sidePadding, 16, sidePadding, 96),
                 sliver: SliverMainAxisGroup(slivers: slivers),
               ),
             ],
