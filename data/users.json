@@ -8,7 +8,7 @@
             "recoveryHash": "",
             "recoverySalt": "",
             "salt": "c7a5d2a9294f66d15794d9c48bd5ac7e",
-            "sessionHash": "7fb925ecd34963f7699f51f8bd5c33487feea2a3058f0626fe119eba598810bc",
+            "sessionHash": "85223f673e6098964febc8a7353582489b5bd23028c58963cf6ce209d9e83f16",
             "username": "junaid"
         },
         {
@@ -28,7 +28,7 @@
             "recoveryHash": "",
             "recoverySalt": "",
             "salt": "9344a8f9a7d33de442d7d54b8839ff99",
-            "sessionHash": "40d7c072ad6003ef4a001d8b1765ad1c5f4fb0cf1528a74cfe407facdf624450",
+            "sessionHash": "",
             "username": "critic"
         }
     ]
